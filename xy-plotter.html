@@ -102,6 +102,9 @@ input:focus, select:focus, textarea:focus{
     <button id="exampleBtn" class="btn" type="button">示例</button>
     <button id="clearBtn" class="btn" type="button">清空</button>
     <button id="pngBtn" class="btn" type="button">导出 PNG</button>
+    <button id="exportDataBtn" class="btn" type="button">导出数据</button>
+    <button id="loadDataBtn" class="btn" type="button">载入数据…</button>
+    <input id="dataFileInput" type="file" accept=".csv,.txt" hidden>
     <button id="panBtn" class="btn" type="button">平移</button>
     <button id="resetBtn" class="btn" type="button">重置视图</button>
     <button id="darkBtn" class="btn" type="button">暗色模式</button>
@@ -200,6 +203,7 @@ input:focus, select:focus, textarea:focus{
             · 鼠标悬停数据点显示精确坐标<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
+            · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
             · Log 坐标会自动跳过 0 和负数
           </div>
         </div>
@@ -279,6 +283,7 @@ function plot() {
   $('info').textContent = curves.map((c) => c.name + ':' + c.xs.length + '点').join('   ');
   resetView();
   status('已绘制 ' + valid.length + ' 条曲线,共 ' + total + ' 个点');
+  scheduleSave();
 }
 
 function clearAll() {
@@ -289,6 +294,7 @@ function clearAll() {
   for (const c of curves) { c.xs = []; c.ys = []; c.visible = true; }
   $('info').textContent = '尚未绘图';
   resetView();
+  scheduleSave();
 }
 
 // ---------- 配置与范围 ----------
@@ -859,6 +865,7 @@ canvas.addEventListener('mousedown', (e) => {
     if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) {
       curves[it.ci].visible = !curves[it.ci].visible;
       redraw();
+      scheduleSave();
       return;
     }
   }
@@ -887,7 +894,7 @@ window.addEventListener('mousemove', (e) => {
 window.addEventListener('mouseup', () => {
   if (!drag) return;
   if (drag.mode === 'label') {
-    saveLabelPos();
+    saveState();
   } else if (drag.mode === 'zoom' && zoomRect) {
     const w = Math.abs(zoomRect.x2 - zoomRect.x1), h = Math.abs(zoomRect.y2 - zoomRect.y1);
     if (w > 5 && h > 5) {
@@ -969,6 +976,12 @@ $('pngBtn').addEventListener('click', () => {
     status('PNG 已导出');
   }, 'image/png');
 });
+$('exportDataBtn').addEventListener('click', exportData);
+$('loadDataBtn').addEventListener('click', () => $('dataFileInput').click());
+$('dataFileInput').addEventListener('change', () => {
+  if ($('dataFileInput').files[0]) loadDataFromFile($('dataFileInput').files[0]);
+  $('dataFileInput').value = '';
+});
 $('panBtn').addEventListener('click', () => {
   panMode = !panMode;
   $('panBtn').setAttribute('aria-pressed', String(panMode));
@@ -991,6 +1004,8 @@ for (const id of ['titleInput', 'titleSize', 'titleColor', 'titleTheme',
   const el = $(id);
   el.addEventListener('input', redraw);
   el.addEventListener('change', redraw);
+  el.addEventListener('input', scheduleSave);
+  el.addEventListener('change', scheduleSave);
 }
 
 function syncTickModeUI() {
@@ -1028,20 +1043,22 @@ function addCurve(name) {
   const nameInput = sec.querySelector('.curve-name');
   const colorInput = sec.querySelector('.curve-color');
   const visInput = sec.querySelector('.curve-vis');
-  nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); });
-  colorInput.addEventListener('input', () => { curve.color = colorInput.value; redraw(); });
-  visInput.addEventListener('change', () => { curve.visible = visInput.checked; redraw(); });
+  nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); scheduleSave(); });
+  colorInput.addEventListener('input', () => { curve.color = colorInput.value; redraw(); scheduleSave(); });
+  visInput.addEventListener('change', () => { curve.visible = visInput.checked; redraw(); scheduleSave(); });
   sec.querySelector('.btn-sm').addEventListener('click', () => {
     const idx = curves.indexOf(curve);
     if (idx >= 0) curves.splice(idx, 1);
     sec.remove();
     resetView();
+    scheduleSave();
   });
   for (const ta of [sec.querySelector('.xData'), sec.querySelector('.yData')]) {
     ta.addEventListener('keydown', (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); plot(); }
     });
     ta.addEventListener('paste', () => setTimeout(plot, 60));
+    ta.addEventListener('input', scheduleSave);
   }
   return curve;
 }
@@ -1052,18 +1069,173 @@ $('addCurveBtn').addEventListener('click', () => addCurve());
 function status(msg) { $('status').textContent = msg; }
 function warn(msg) { $('status').textContent = '⚠ ' + msg; }
 
-function saveLabelPos() {
-  try { localStorage.setItem('xy-plot-labelpos', JSON.stringify(labelPos)); } catch (e) {}
+function exportData() {
+  const valid = curves.filter((c) => c.xs.length);
+  if (!valid.length) { warn('没有可导出的数据'); return; }
+  const rows = ['曲线,x,y'];
+  for (const c of valid) {
+    const name = '"' + c.name.replace(/"/g, '""') + '"';
+    for (let i = 0; i < c.xs.length; i++) rows.push(name + ',' + c.xs[i] + ',' + c.ys[i]);
+  }
+  const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = '曲线数据.csv';
+  a.click();
+  setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  status('已导出 ' + valid.length + ' 条曲线,共 ' + (rows.length - 1) + ' 行数据');
 }
-function loadLabelPos() {
+
+function parseCSV(text) {
+  const rows = [];
+  let row = [], field = '', inQ = false;
+  const s = String(text).replace(/^\ufeff/, '');
+  for (let i = 0; i < s.length; i++) {
+    const ch = s[i];
+    if (inQ) {
+      if (ch === '"') {
+        if (s[i + 1] === '"') { field += '"'; i++; }
+        else inQ = false;
+      } else field += ch;
+    } else if (ch === '"') {
+      inQ = true;
+    } else if (ch === ',') {
+      row.push(field); field = '';
+    } else if (ch === '\n' || ch === '\r') {
+      if (ch === '\r' && s[i + 1] === '\n') i++;
+      row.push(field); field = '';
+      if (row.some((f) => f.trim() !== '')) rows.push(row);
+      row = [];
+    } else field += ch;
+  }
+  row.push(field);
+  if (row.some((f) => f.trim() !== '')) rows.push(row);
+  return rows;
+}
+
+function loadDataFromFile(file) {
+  file.text().then((text) => {
+    const rows = parseCSV(text);
+    if (!rows.length || String(rows[0][0]).trim().toLowerCase() !== '曲线') {
+      warn('CSV 格式不正确:第一行应为 曲线,x,y');
+      return;
+    }
+    const groups = {}, order = [];
+    for (let i = 1; i < rows.length; i++) {
+      const r = rows[i];
+      if (!r || r.length < 3) continue;
+      const x = Number(r[1]), y = Number(r[2]);
+      if (!isFinite(x) || !isFinite(y)) continue;
+      const name = String(r[0]).trim() || '曲线';
+      if (!groups[name]) { groups[name] = { xs: [], ys: [] }; order.push(name); }
+      groups[name].xs.push(x);
+      groups[name].ys.push(y);
+    }
+    if (!order.length) { warn('文件中没有有效数据行'); return; }
+    while (curves.length) {
+      const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
+      if (sec) sec.remove();
+      curves.pop();
+    }
+    for (const name of order) {
+      const c = addCurve(name);
+      const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+      sec.querySelector('.xData').value = groups[name].xs.join(' ');
+      sec.querySelector('.yData').value = groups[name].ys.join(' ');
+    }
+    plot();
+    saveState();
+    status('已载入 ' + order.length + ' 条曲线');
+  }).catch((e) => warn('读取文件失败:' + e.message));
+}
+
+let saveTimer = null;
+function scheduleSave() {
+  clearTimeout(saveTimer);
+  saveTimer = setTimeout(saveState, 300);
+}
+
+function saveState() {
   try {
-    const s = localStorage.getItem('xy-plot-labelpos');
-    if (!s) return;
-    const o = JSON.parse(s);
-    if (o.title) labelPos.title = o.title;
-    if (o.xAxis) labelPos.xAxis = o.xAxis;
-    if (o.yAxis) labelPos.yAxis = o.yAxis;
-  } catch (e) {}
+    const secs = curvesBox.querySelectorAll('.curve-sec');
+    const state = {
+      settings: {
+        title: $('titleInput').value, titleSize: $('titleSize').value, titleColor: $('titleColor').value, titleTheme: $('titleTheme').checked,
+        xLabel: $('xLabelInput').value, yLabel: $('yLabelInput').value, axisFont: $('axisFontSel').value,
+        xLabelSize: $('xLabelSize').value, xLabelColor: $('xLabelColor').value, xLabelTheme: $('xLabelTheme').checked,
+        yLabelSize: $('yLabelSize').value, yLabelColor: $('yLabelColor').value, yLabelTheme: $('yLabelTheme').checked,
+        xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
+        ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
+        grid: $('gridChk').checked, smooth: $('smoothSel').value, points: $('pointsChk').checked
+      },
+      view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
+      labelPos: labelPos,
+      curves: curves.map((c, i) => {
+        const sec = secs[i];
+        return {
+          name: c.name, color: c.color, visible: c.visible,
+          xText: sec ? sec.querySelector('.xData').value : '',
+          yText: sec ? sec.querySelector('.yData').value : ''
+        };
+      })
+    };
+    localStorage.setItem('xy-plotter-state', JSON.stringify(state));
+  } catch (e) {
+    warn('自动保存失败:数据可能过大');
+  }
+}
+
+function loadState() {
+  let state = null;
+  try { state = JSON.parse(localStorage.getItem('xy-plotter-state') || 'null'); } catch (e) {}
+  if (state && state.settings) {
+    const s = state.settings;
+    const set = (id, v) => { const el = $(id); if (el && v !== undefined && v !== null && v !== '') el.value = v; };
+    const setChk = (id, v) => { const el = $(id); if (el) el.checked = !!v; };
+    set('titleInput', s.title); set('titleSize', s.titleSize); set('titleColor', s.titleColor); setChk('titleTheme', s.titleTheme);
+    set('xLabelInput', s.xLabel); set('yLabelInput', s.yLabel); set('axisFontSel', s.axisFont);
+    set('xLabelSize', s.xLabelSize); set('xLabelColor', s.xLabelColor); setChk('xLabelTheme', s.xLabelTheme);
+    set('yLabelSize', s.yLabelSize); set('yLabelColor', s.yLabelColor); setChk('yLabelTheme', s.yLabelTheme);
+    set('xScaleSel', s.xScale); set('yScaleSel', s.yScale);
+    set('tickInput', s.ticks); set('tickModeSel', s.tickMode); set('tickStep', s.tickStep); set('customTicks', s.customTicks);
+    setChk('gridChk', s.grid); set('smoothSel', s.smooth); setChk('pointsChk', s.points);
+  }
+  if (state && state.labelPos) {
+    if (state.labelPos.title) labelPos.title = state.labelPos.title;
+    if (state.labelPos.xAxis) labelPos.xAxis = state.labelPos.xAxis;
+    if (state.labelPos.yAxis) labelPos.yAxis = state.labelPos.yAxis;
+  }
+  if (state && state.view) {
+    const v = state.view;
+    view.autoX = !!v.autoX; view.autoY = !!v.autoY;
+    if (isFinite(v.xMin)) view.xMin = v.xMin;
+    if (isFinite(v.xMax)) view.xMax = v.xMax;
+    if (isFinite(v.yMin)) view.yMin = v.yMin;
+    if (isFinite(v.yMax)) view.yMax = v.yMax;
+  }
+  while (curves.length) {
+    const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
+    if (sec) sec.remove();
+    curves.pop();
+  }
+  const savedCurves = (state && Array.isArray(state.curves) && state.curves.length) ? state.curves : null;
+  let hasData = false;
+  if (savedCurves) {
+    for (const sc of savedCurves) {
+      const c = addCurve(sc.name);
+      const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+      if (sc.color) { c.color = sc.color; sec.querySelector('.curve-color').value = sc.color; }
+      c.visible = sc.visible !== false;
+      sec.querySelector('.curve-vis').checked = c.visible;
+      sec.querySelector('.xData').value = sc.xText || '';
+      sec.querySelector('.yData').value = sc.yText || '';
+      if (sc.yText && sc.yText.trim()) hasData = true;
+    }
+  } else {
+    addCurve();
+  }
+  syncTickModeUI();
+  if (hasData) plot(); else redraw();
 }
 
 function resize() {
@@ -1079,8 +1251,7 @@ function resize() {
 
 window.addEventListener('resize', resize);
 resize();
-loadLabelPos();
-addCurve();
+loadState();
 document.body.dataset.ready = '1';
 </script>
 </body>
