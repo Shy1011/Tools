@@ -1,0 +1,301 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>32 位位选择器 ×6</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --text:#1b2430; --muted:#697386;
+  --border:#e2e6ec; --accent:#2563eb; --accent-soft:#dbeafe;
+  --on-accent:#ffffff; --danger:#dc2626;
+  --mono:"Cascadia Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1217; --card:#171c24; --text:#e6e9ef; --muted:#9aa5b5;
+    --border:#2a323e; --accent:#3b82f6; --accent-soft:#1e2a44;
+    --on-accent:#ffffff; --danger:#f87171;
+  }
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; padding:12px 14px; min-height:100dvh;
+  display:flex; flex-direction:column; overflow:auto;
+  background:var(--bg); color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;
+  line-height:1.5;
+}
+h1{font-size:17px; margin:0 0 2px}
+.sub{font-size:12px; color:var(--muted); margin:0 0 12px}
+.grid{
+  flex:1 1 auto; min-height:0; display:grid; gap:12px;
+  grid-template-columns:repeat(var(--cols, 2), minmax(0, 1fr));
+  grid-template-rows:repeat(var(--rows, 3), auto);
+  align-content:stretch;
+}
+.calc{
+  background:var(--card); border:1px solid var(--border); border-radius:10px;
+  padding:10px 12px; min-width:0;
+  display:flex; flex-direction:column; justify-content:space-between;
+}
+.calc-note{
+  width:100%; margin:6px 0 8px; padding:4px 8px;
+  border:1px dashed var(--border); border-radius:6px;
+  background:transparent; color:var(--text);
+  font-family:inherit; font-size:12px;
+}
+.calc-note::placeholder{color:var(--muted)}
+.calc-note:focus{border-style:solid; outline:2px solid var(--accent); outline-offset:1px}
+.bits-wrap{display:flex; flex-direction:column; gap:3px}
+.calc-head{display:flex; align-items:center; gap:8px; margin-bottom:8px}
+.calc-name{font-size:12px; font-weight:600; color:var(--muted)}
+.calc-hex{
+  font-family:var(--mono); font-size:16px; font-weight:700; margin-left:auto;
+  letter-spacing:1px;
+}
+.idx-row{
+  display:grid; grid-template-columns:repeat(32, 1fr); gap:2px; margin-bottom:3px;
+}
+.idx-row span{font-size:8px; color:var(--muted); text-align:center; line-height:1}
+.bits{display:grid; grid-template-columns:repeat(32, 1fr); gap:2px}
+.bit{
+  min-width:0; height:18px; padding:0; border:1px solid var(--border);
+  border-radius:3px; background:transparent; color:var(--text);
+  font-family:var(--mono); font-size:11px; font-weight:700; line-height:1;
+  cursor:pointer; transition:background .12s, border-color .12s;
+}
+.bit:hover{border-color:var(--accent)}
+.bit[aria-pressed="true"]{
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent);
+}
+.calc-info{
+  display:flex; flex-wrap:wrap; gap:3px 10px; margin-top:8px;
+  font-family:var(--mono); font-size:11px; color:var(--muted);
+  word-break:break-all;
+}
+.calc-actions{display:flex; flex-wrap:wrap; gap:5px; align-items:center; margin-top:8px}
+.btn-sm{
+  font-family:inherit; font-size:11px; padding:3px 8px; border-radius:5px;
+  border:1px solid var(--border); background:transparent; color:var(--text);
+  cursor:pointer;
+}
+.btn-sm:hover{border-color:var(--accent)}
+.btn-sm.primary{
+  background:var(--accent); border-color:var(--accent); color:var(--on-accent);
+}
+.btn-sm.primary:hover{opacity:.9}
+.hexin{
+  width:92px; font-family:var(--mono); font-size:11px; padding:3px 6px;
+  border:1px solid var(--border); border-radius:5px; background:transparent;
+  color:var(--text);
+}
+.hexin:focus{outline:2px solid var(--accent); outline-offset:1px; border-color:var(--accent)}
+.hexin.invalid{border-color:var(--danger)}
+.err{color:var(--danger); font-size:11px; flex-basis:100%}
+@media (max-width:600px){
+  .idx-row, .bits{grid-template-columns:repeat(16, 1fr)}
+}
+</style>
+</head>
+<body>
+  <h1>32 位位选择器 × 6</h1>
+  <p class="sub">6 个独立的计算器,点击每一位切换 0 / 1,实时显示 HEX。每个可单独清零、全 1、随机或载入十六进制。</p>
+  <div id="grid" class="grid"></div>
+  <noscript><p>此工具需要启用 JavaScript。</p></noscript>
+
+<script>
+const N = 32;
+const COUNT = 6;
+
+function binStr(v) {
+  return v.toString(2).padStart(32, '0').replace(/(.{4})(?=.)/g, '$1 ');
+}
+
+function createCalc(seq) {
+  const card = document.createElement('section');
+  card.className = 'calc';
+  card.setAttribute('aria-label', '计算器 ' + seq);
+
+  const head = document.createElement('div');
+  head.className = 'calc-head';
+  const name = document.createElement('span');
+  name.className = 'calc-name';
+  name.textContent = '计算器 ' + seq;
+  const hex = document.createElement('span');
+  hex.className = 'calc-hex';
+  const copy = document.createElement('button');
+  copy.type = 'button';
+  copy.className = 'btn-sm';
+  copy.textContent = '复制';
+  head.append(name, hex, copy);
+
+  const idxRow = document.createElement('div');
+  idxRow.className = 'idx-row';
+  const bitsGrid = document.createElement('div');
+  bitsGrid.className = 'bits';
+  const bitsWrap = document.createElement('div');
+  bitsWrap.className = 'bits-wrap';
+
+  const bits = new Array(N).fill(false);
+  const bitEls = new Array(N);
+  for (let i = N - 1; i >= 0; i--) {
+    const s = document.createElement('span');
+    s.textContent = i;
+    idxRow.append(s);
+
+    const b = document.createElement('button');
+    b.type = 'button';
+    b.className = 'bit';
+    b.setAttribute('aria-pressed', 'false');
+    b.setAttribute('aria-label', '位 ' + i);
+    b.title = '位 ' + i + ' (权重 2^' + i + ')';
+    b.textContent = '0';
+    b.addEventListener('click', () => {
+      bits[i] = !bits[i];
+      render();
+    });
+    bitsGrid.append(b);
+    bitEls[i] = b;
+  }
+
+  const info = document.createElement('div');
+  info.className = 'calc-info';
+  const dec = document.createElement('span');
+  const sdec = document.createElement('span');
+  const bin = document.createElement('span');
+  info.append(dec, sdec, bin);
+
+  const actions = document.createElement('div');
+  actions.className = 'calc-actions';
+  const all0 = document.createElement('button');
+  all0.type = 'button'; all0.className = 'btn-sm'; all0.textContent = '清零';
+  const all1 = document.createElement('button');
+  all1.type = 'button'; all1.className = 'btn-sm'; all1.textContent = '全 1';
+  const rand = document.createElement('button');
+  rand.type = 'button'; rand.className = 'btn-sm'; rand.textContent = '随机';
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.className = 'hexin';
+  input.placeholder = '0x…';
+  input.autocomplete = 'off';
+  input.spellcheck = false;
+  const load = document.createElement('button');
+  load.type = 'button'; load.className = 'btn-sm primary'; load.textContent = '载入';
+  const err = document.createElement('div');
+  err.className = 'err';
+  err.hidden = true;
+  actions.append(all0, all1, rand, input, load, err);
+  const note = document.createElement('input');
+  note.type = 'text';
+  note.className = 'calc-note';
+  note.placeholder = '点击输入注释…';
+  note.maxLength = 50;
+  let savedNote = '';
+  try { savedNote = localStorage.getItem('calc-note-' + seq) || ''; } catch (e) {}
+  note.value = savedNote;
+  note.addEventListener('input', () => {
+    try { localStorage.setItem('calc-note-' + seq, note.value); } catch (e) {}
+  });
+
+  bitsWrap.append(idxRow, bitsGrid);
+  card.append(head, note, bitsWrap, info, actions);
+
+  function getValue() {
+    let v = 0;
+    for (let i = N - 1; i >= 0; i--) v = v * 2 + (bits[i] ? 1 : 0);
+    return v >>> 0;
+  }
+
+  function setValue(v) {
+    v >>>= 0;
+    for (let i = 0; i < N; i++) bits[i] = ((v >>> i) & 1) === 1;
+    render();
+  }
+
+  function render() {
+    const v = getValue();
+    hex.textContent = '0x' + v.toString(16).toUpperCase().padStart(8, '0');
+    dec.textContent = 'DEC ' + v.toLocaleString('en-US');
+    sdec.textContent = 'int32 ' + (v >= 0x80000000 ? v - 0x100000000 : v).toLocaleString('en-US');
+    bin.textContent = 'BIN ' + binStr(v);
+    for (let i = 0; i < N; i++) {
+      bitEls[i].setAttribute('aria-pressed', String(bits[i]));
+      bitEls[i].textContent = bits[i] ? '1' : '0';
+    }
+  }
+
+  function loadHex() {
+    const raw = input.value.trim().replace(/^0x/i, '');
+    if (!/^[0-9a-fA-F]{1,8}$/.test(raw)) {
+      input.classList.add('invalid');
+      err.hidden = false;
+      err.textContent = '请输入 1–8 位十六进制数字';
+      return;
+    }
+    input.classList.remove('invalid');
+    err.hidden = true;
+    setValue(parseInt(raw, 16));
+  }
+
+  function flashCopy() {
+    const old = copy.textContent;
+    copy.textContent = '已复制';
+    setTimeout(() => { copy.textContent = old; }, 1000);
+  }
+
+  all0.addEventListener('click', () => { bits.fill(false); render(); });
+  all1.addEventListener('click', () => { bits.fill(true); render(); });
+  rand.addEventListener('click', () => {
+    const v = (typeof crypto !== 'undefined' && crypto.getRandomValues)
+      ? crypto.getRandomValues(new Uint32Array(1))[0]
+      : (Math.random() * 0x100000000) >>> 0;
+    setValue(v);
+  });
+  load.addEventListener('click', loadHex);
+  input.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') loadHex();
+  });
+  copy.addEventListener('click', async () => {
+    const text = hex.textContent;
+    try {
+      await navigator.clipboard.writeText(text);
+      flashCopy();
+    } catch {
+      const ta = document.createElement('textarea');
+      ta.value = text;
+      ta.style.position = 'fixed';
+      ta.style.opacity = '0';
+      document.body.append(ta);
+      ta.select();
+      try {
+        document.execCommand('copy');
+        flashCopy();
+      } catch {
+        copy.textContent = '失败';
+        setTimeout(() => { copy.textContent = '复制'; }, 1000);
+      }
+      ta.remove();
+    }
+  });
+
+  render();
+  return card;
+}
+
+const grid = document.getElementById('grid');
+for (let k = 1; k <= COUNT; k++) grid.append(createCalc(k));
+
+function applyLayout() {
+  const w = window.innerWidth;
+  const cols = w >= 1400 ? 3 : (w >= 900 ? 2 : 1);
+  const root = document.documentElement.style;
+  root.setProperty('--cols', cols);
+  root.setProperty('--rows', Math.ceil(COUNT / cols));
+}
+applyLayout();
+window.addEventListener('resize', applyLayout);
+</script>
+</body>
+</html>
