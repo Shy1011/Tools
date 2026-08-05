@@ -1,0 +1,1087 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>XY 曲线绘图(简易版)</title>
+<style>
+:root{
+  --bg:#f5f6f8; --panel:#ffffff; --border:#e2e6ec; --text:#1b2430;
+  --muted:#697386; --accent:#2563eb; --danger:#dc2626;
+  --mono:"Cascadia Mono", Consolas, "Courier New", monospace;
+}
+body.dark{
+  --bg:#0f1217; --panel:#171c24; --border:#2a323e; --text:#e6e9ef;
+  --muted:#9aa5b5; --accent:#3b82f6; --danger:#f87171;
+}
+*{box-sizing:border-box}
+html,body{height:100%}
+body{
+  margin:0; display:flex; flex-direction:column; overflow:hidden;
+  background:var(--bg); color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;
+  font-size:13px; line-height:1.45;
+}
+.toolbar{
+  display:flex; gap:8px; align-items:center; flex-wrap:wrap;
+  padding:8px 12px; border-bottom:1px solid var(--border); background:var(--panel);
+}
+.toolbar .brand{font-weight:700; margin-right:8px}
+.main{flex:1; display:flex; min-height:0}
+.panel{
+  width:300px; min-width:250px; max-width:340px; overflow-y:auto;
+  border-right:1px solid var(--border); background:var(--panel); padding:10px 12px;
+}
+.canvas-wrap{flex:1; position:relative; min-width:0; background:var(--bg)}
+canvas{position:absolute; inset:0; width:100%; height:100%; display:block; cursor:crosshair}
+.status{
+  height:28px; line-height:28px; padding:0 12px; white-space:nowrap;
+  overflow:hidden; text-overflow:ellipsis;
+  border-top:1px solid var(--border); background:var(--panel);
+  font-family:var(--mono); font-size:12px; color:var(--muted);
+}
+.tooltip{
+  position:absolute; pointer-events:none; z-index:10; display:none;
+  background:var(--panel); border:1px solid var(--border); border-radius:6px;
+  padding:5px 9px; font-family:var(--mono); font-size:12px;
+  box-shadow:0 2px 10px rgba(0,0,0,.18);
+}
+details.sec{border:1px solid var(--border); border-radius:8px; margin-bottom:8px; overflow:hidden}
+summary{
+  padding:7px 10px; font-size:13px; font-weight:600; cursor:pointer;
+  background:color-mix(in srgb, var(--text) 4%, transparent); user-select:none;
+}
+.sec-body{padding:8px 10px; display:flex; flex-direction:column; gap:7px}
+label.f{display:flex; flex-direction:column; gap:3px; font-size:12px; color:var(--muted)}
+.row{display:flex; gap:6px; align-items:center; flex-wrap:wrap}
+.row label.chk{display:flex; align-items:center; gap:4px; font-size:12px; color:var(--text); cursor:pointer}
+input[type=text], input[type=number], select, textarea{
+  width:100%; font-family:inherit; font-size:12px; color:var(--text);
+  background:transparent; border:1px solid var(--border); border-radius:6px;
+  padding:4px 7px;
+}
+textarea{resize:vertical; min-height:120px; font-family:var(--mono)}
+input:focus, select:focus, textarea:focus{
+  outline:2px solid var(--accent); outline-offset:0; border-color:var(--accent);
+}
+.num{width:68px}
+.btn{
+  font-family:inherit; font-size:12px; padding:5px 10px; border-radius:6px;
+  border:1px solid var(--border); background:transparent; color:var(--text);
+  cursor:pointer;
+}
+.btn:hover{border-color:var(--accent)}
+.btn.primary{background:var(--accent); border-color:var(--accent); color:#fff}
+.btn.primary:hover{opacity:.9}
+.btn[aria-pressed="true"]{background:var(--accent); border-color:var(--accent); color:#fff}
+.curve-sec{
+  border:1px solid var(--border); border-radius:8px; padding:8px; margin-bottom:8px;
+  display:flex; flex-direction:column; gap:6px;
+}
+.curve-head{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
+.curve-head .curve-name{flex:1; min-width:80px; font-size:12px}
+.curve-head input[type=color]{width:30px; height:22px; padding:1px; border-radius:5px; cursor:pointer}
+.curve-sec textarea{min-height:64px; font-size:11px}
+.btn-sm{
+  font-family:inherit; font-size:11px; padding:3px 8px; border-radius:5px;
+  border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer;
+}
+.btn-sm:hover{border-color:var(--danger); color:var(--danger)}
+.hint{font-size:11px; color:var(--muted); line-height:1.5}
+.info-line{font-size:12px; color:var(--muted); font-family:var(--mono)}
+@media (max-width:820px){
+  .main{flex-direction:column}
+  .panel{width:auto; min-width:0; max-width:none; max-height:40vh; border-right:none; border-bottom:1px solid var(--border)}
+}
+</style>
+</head>
+<body>
+  <div class="toolbar">
+    <span class="brand">XY 曲线绘图</span>
+    <button id="plotBtn" class="btn primary" type="button">绘图</button>
+    <button id="exampleBtn" class="btn" type="button">示例</button>
+    <button id="clearBtn" class="btn" type="button">清空</button>
+    <button id="pngBtn" class="btn" type="button">导出 PNG</button>
+    <button id="panBtn" class="btn" type="button">平移</button>
+    <button id="resetBtn" class="btn" type="button">重置视图</button>
+    <button id="darkBtn" class="btn" type="button">暗色模式</button>
+  </div>
+
+  <div class="main">
+    <aside class="panel">
+      <details class="sec" open>
+        <summary>坐标轴标签</summary>
+        <div class="sec-body">
+          <div class="row">
+            <label class="f">X 轴 <input id="xLabelInput" type="text" value="x"></label>
+            <label class="f">Y 轴 <input id="yLabelInput" type="text" value="y"></label>
+          </div>
+          <label class="f">文字字体
+            <select id="axisFontSel">
+              <option value="system-ui">系统默认</option>
+              <option value="'Microsoft YaHei', sans-serif">微软雅黑</option>
+              <option value="SimSun, serif">宋体</option>
+              <option value="SimHei, sans-serif">黑体</option>
+              <option value="KaiTi, serif">楷体</option>
+              <option value="Arial, sans-serif">Arial</option>
+              <option value="Consolas, monospace">Consolas</option>
+            </select>
+          </label>
+          <div class="row">
+            <label class="f">X 字号 <input id="xLabelSize" class="num" type="number" value="12" min="8" max="36"></label>
+            <label class="f">X 颜色 <input id="xLabelColor" type="color" value="#111827"></label>
+            <label class="chk"><input id="xLabelTheme" type="checkbox" checked> X 色随主题</label>
+          </div>
+          <div class="row">
+            <label class="f">Y 字号 <input id="yLabelSize" class="num" type="number" value="12" min="8" max="36"></label>
+            <label class="f">Y 颜色 <input id="yLabelColor" type="color" value="#111827"></label>
+            <label class="chk"><input id="yLabelTheme" type="checkbox" checked> Y 色随主题</label>
+          </div>
+          <div class="hint">修改后立即生效;直接拖动图表上的标题或轴名称文字,可以调整位置。</div>
+        </div>
+      </details>
+
+      <details class="sec" open>
+        <summary>数据输入</summary>
+        <div class="sec-body">
+          <div id="curvesBox"></div>
+          <button id="addCurveBtn" class="btn" type="button">+ 新增曲线</button>
+          <div class="hint">每条曲线有自己的 X / Y 输入框和颜色;X 留空时自动用 0, 1, 2, …;数量不一致时按较少的一侧绘制。</div>
+          <div class="info-line" id="info">尚未绘图</div>
+        </div>
+      </details>
+
+      <details class="sec">
+        <summary>标题与坐标轴</summary>
+        <div class="sec-body">
+          <label class="f">标题 <input id="titleInput" type="text" value="曲线图"></label>
+          <div class="row">
+            <label class="f">标题字号 <input id="titleSize" class="num" type="number" value="18" min="10" max="60"></label>
+            <label class="f">标题颜色 <input id="titleColor" type="color" value="#111827"></label>
+            <label class="chk"><input id="titleTheme" type="checkbox" checked> 随主题</label>
+          </div>
+          <div class="row">
+            <label class="f">X 缩放
+              <select id="xScaleSel"><option value="linear">线性</option><option value="log">对数 Log10</option></select>
+            </label>
+            <label class="f">Y 缩放
+              <select id="yScaleSel"><option value="linear">线性</option><option value="log">对数 Log10</option></select>
+            </label>
+          </div>
+          <label class="f">刻度数量(用于「自动」和「等分」)<input id="tickInput" class="num" type="number" value="10" min="2" max="50"></label>
+          <label class="f">刻度方式
+            <select id="tickModeSel">
+              <option value="auto">自动(漂亮数)</option>
+              <option value="equal">等分 N 段</option>
+              <option value="step">固定步长</option>
+              <option value="data">数据点位置</option>
+              <option value="custom">自定义刻度</option>
+            </select>
+          </label>
+          <label class="f" id="tickStepWrap" hidden>固定步长(Log 时为 10 的指数步长)<input id="tickStep" class="num" type="number" value="1" step="any" min="0.000001"></label>
+          <label class="f" id="customTicksWrap" hidden>自定义刻度(空格/逗号分隔)<input id="customTicks" type="text" placeholder="例如 0 2 4 6 8 10"></label>
+          <div class="row">
+            <label class="chk"><input id="gridChk" type="checkbox" checked> 网格</label>
+            <label class="f">连线
+              <select id="smoothSel"><option value="line">折线</option><option value="smooth">平滑曲线</option></select>
+            </label>
+            <label class="chk"><input id="pointsChk" type="checkbox"> 数据点</label>
+          </div>
+        </div>
+      </details>
+
+      <details class="sec">
+        <summary>操作说明</summary>
+        <div class="sec-body">
+          <div class="hint">
+            · 鼠标拖拽框选区域可放大<br>
+            · 双击画布恢复自动范围<br>
+            · 按住空格键拖动画布可平移<br>
+            · 鼠标悬停数据点显示精确坐标<br>
+            · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
+            · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
+            · Log 坐标会自动跳过 0 和负数
+          </div>
+        </div>
+      </details>
+    </aside>
+
+    <div class="canvas-wrap" id="canvasWrap">
+      <canvas id="canvas"></canvas>
+      <div class="tooltip" id="tooltip"></div>
+    </div>
+  </div>
+
+  <div class="status" id="status">就绪 — 粘贴 X、Y 数据后点击「绘图」</div>
+
+<script>
+'use strict';
+const $ = (id) => document.getElementById(id);
+const MONO = '"Cascadia Mono", Consolas, "Courier New", monospace';
+const SERIES_COLOR = '#2563eb';
+const THEMES = {
+  light: { bg:'#ffffff', grid:'#e5e7eb', minor:'#f3f4f6', axis:'#6b7280', text:'#111827', title:'#111827', frame:'#d1d5db' },
+  dark:  { bg:'#11161d', grid:'#2a323e', minor:'#1f2731', axis:'#9aa5b5', text:'#e6e9ef', title:'#f3f4f6', frame:'#3a4350' }
+};
+
+let curves = [];          // [{id,name,color,visible,xs,ys}]
+let curveSeq = 0;
+const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0ea5e9', '#db2777', '#65a30d'];
+const curvesBox = $('curvesBox');
+let legendItems = [];     // [{x,y,w,h,ci}]
+const labelPos = {
+  title: { x: 0.5, y: 8 },
+  xAxis: { t: 0.5, d: 40 },
+  yAxis: { t: 0.5, d: 18 }
+};
+let labelRects = {};
+let cssW = 0, cssH = 0, dpr = 1;
+const view = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, autoX: true, autoY: true };
+let theme = 'light';
+let panMode = false, spaceDown = false;
+let hover = null;
+let zoomRect = null;
+let drag = null;
+let redrawPending = false;
+
+const canvas = $('canvas');
+const ctx = canvas.getContext('2d');
+
+// ---------- 数据解析 ----------
+function parseList(text) {
+  const toks = String(text).split(/[\s,;]+/).filter((t) => t !== '');
+  const vals = [];
+  let skipped = 0;
+  for (const t of toks) {
+    const v = Number(t);
+    if (isFinite(v)) vals.push(v); else skipped++;
+  }
+  return { vals, skipped };
+}
+
+function plot() {
+  let total = 0;
+  for (const c of curves) {
+    const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+    if (!sec) { c.xs = []; c.ys = []; continue; }
+    const px = parseList(sec.querySelector('.xData').value);
+    const py = parseList(sec.querySelector('.yData').value);
+    if (!py.vals.length) { c.xs = []; c.ys = []; continue; }
+    const x2 = px.vals.length ? px.vals.slice() : py.vals.map((_, k) => k);
+    const y2 = py.vals.slice();
+    const n = Math.min(x2.length, y2.length);
+    c.xs = x2.slice(0, n);
+    c.ys = y2.slice(0, n);
+    total += n;
+  }
+  const valid = curves.filter((c) => c.xs.length >= 2);
+  if (!valid.length) { warn('至少需要一条包含 2 个以上有效数据点的曲线'); return; }
+  $('info').textContent = curves.map((c) => c.name + ':' + c.xs.length + '点').join('   ');
+  resetView();
+  status('已绘制 ' + valid.length + ' 条曲线,共 ' + total + ' 个点');
+}
+
+function clearAll() {
+  for (const sec of curvesBox.querySelectorAll('.curve-sec')) {
+    sec.querySelector('.xData').value = '';
+    sec.querySelector('.yData').value = '';
+  }
+  for (const c of curves) { c.xs = []; c.ys = []; c.visible = true; }
+  $('info').textContent = '尚未绘图';
+  resetView();
+}
+
+// ---------- 配置与范围 ----------
+function readConfig() {
+  const num = (el, def) => { const v = parseFloat(el.value); return isFinite(v) ? v : def; };
+  return {
+    title: $('titleInput').value.trim(),
+    titleSize: num($('titleSize'), 18),
+    titleColor: $('titleColor').value,
+    titleTheme: $('titleTheme').checked,
+    xLabel: $('xLabelInput').value.trim(),
+    yLabel: $('yLabelInput').value.trim(),
+    axisFont: $('axisFontSel').value,
+    xLabelSize: num($('xLabelSize'), 12),
+    xLabelColor: $('xLabelColor').value,
+    xLabelTheme: $('xLabelTheme').checked,
+    yLabelSize: num($('yLabelSize'), 12),
+    yLabelColor: $('yLabelColor').value,
+    yLabelTheme: $('yLabelTheme').checked,
+    xScale: $('xScaleSel').value,
+    yScale: $('yScaleSel').value,
+    ticks: Math.max(2, Math.min(50, num($('tickInput'), 10))),
+    tickMode: $('tickModeSel').value,
+    tickStep: num($('tickStep'), 1),
+    customTicks: $('customTicks').value,
+    grid: $('gridChk').checked,
+    smooth: $('smoothSel').value === 'smooth',
+    points: $('pointsChk').checked
+  };
+}
+
+function collectData() {
+  const allX = [], allY = [];
+  for (const c of curves) {
+    if (!c.visible) continue;
+    for (const v of c.xs) allX.push(v);
+    for (const v of c.ys) allY.push(v);
+  }
+  return { allX, allY };
+}
+
+function computeView(cfg) {
+  const { allX, allY } = collectData();
+  if (!allX.length) { view.xMin = 0; view.xMax = 1; view.yMin = 0; view.yMax = 1; return; }
+  const range = (arr, wantLog) => {
+    let lo = Infinity, hi = -Infinity;
+    for (const v of arr) {
+      if (!isFinite(v)) continue;
+      if (wantLog && v <= 0) continue;
+      if (v < lo) lo = v;
+      if (v > hi) hi = v;
+    }
+    if (!isFinite(lo)) return null;
+    if (lo === hi) { lo -= 1; hi += 1; }
+    return [lo, hi];
+  };
+  if (view.autoX) {
+    const r = range(allX, cfg.xScale === 'log');
+    if (r) { view.xMin = r[0]; view.xMax = r[1]; }
+  } else if (!(isFinite(view.xMin) && isFinite(view.xMax) && view.xMin < view.xMax)) {
+    const r = range(allX, cfg.xScale === 'log');
+    if (r) { view.xMin = r[0]; view.xMax = r[1]; }
+  }
+  if (view.autoY) {
+    const r = range(allY, cfg.yScale === 'log');
+    if (r) { view.yMin = r[0]; view.yMax = r[1]; }
+  } else if (!(isFinite(view.yMin) && isFinite(view.yMax) && view.yMin < view.yMax)) {
+    const r = range(allY, cfg.yScale === 'log');
+    if (r) { view.yMin = r[0]; view.yMax = r[1]; }
+  }
+  if (cfg.xScale === 'log' && view.xMin <= 0) {
+    const r = range(allX, true);
+    if (r) { view.xMin = r[0]; view.xMax = r[1]; }
+    else { view.xMin = 1; view.xMax = 10; warn('Log 坐标没有正数数据,已使用默认范围 1–10'); }
+  }
+  if (cfg.yScale === 'log' && view.yMin <= 0) {
+    const r = range(allY, true);
+    if (r) { view.yMin = r[0]; view.yMax = r[1]; }
+    else { view.yMin = 1; view.yMax = 10; warn('Log 坐标没有正数数据,已使用默认范围 1–10'); }
+  }
+}
+
+function resetView() {
+  view.autoX = true; view.autoY = true;
+  redraw();
+}
+
+function syncRangeInputs() {
+  view.autoX = false; view.autoY = false;
+}
+
+// ---------- 刻度与映射 ----------
+function fmt(v) {
+  if (!isFinite(v)) return '';
+  if (v === 0) return '0';
+  const a = Math.abs(v);
+  if (a >= 1e6 || a < 1e-4) return v.toExponential(2);
+  if (Number.isInteger(v)) return String(v);
+  return String(parseFloat(v.toPrecision(6)));
+}
+
+function niceTicks(min, max, count) {
+  const span = max - min;
+  if (span <= 0 || !isFinite(span)) return [min];
+  const rough = Math.pow(10, Math.floor(Math.log10(span / count)));
+  const err = span / count / rough;
+  const mult = err >= 7.5 ? 10 : err >= 3.5 ? 5 : err >= 1.5 ? 2 : 1;
+  const step = rough * mult;
+  const out = [];
+  for (let v = Math.ceil(min / step) * step; v <= max + step * 1e-9; v += step) out.push(v);
+  return out;
+}
+
+function logTicks(min, max) {
+  if (!(min > 0) || !(max > min) || !isFinite(min) || !isFinite(max)) return [];
+  const out = [];
+  const e0 = Math.ceil(Math.log10(min));
+  const e1 = Math.floor(Math.log10(max));
+  for (let e = e0; e <= e1; e++) {
+    const v = Math.pow(10, e);
+    if (v >= min * (1 - 1e-9) && v <= max * (1 + 1e-9)) out.push(v);
+  }
+  return out;
+}
+
+function computeTicks(cfg, min, max, isLog, dataVals) {
+  if (!isFinite(min) || !isFinite(max) || max <= min) return [min];
+  const mode = cfg.tickMode || 'auto';
+  if (mode === 'equal') {
+    const n = Math.max(2, cfg.ticks);
+    const out = [];
+    for (let i = 0; i <= n; i++) {
+      if (isLog) out.push(Math.pow(10, Math.log10(min) + (Math.log10(max) - Math.log10(min)) * i / n));
+      else out.push(min + (max - min) * i / n);
+    }
+    return out;
+  }
+  if (mode === 'step') {
+    const step = cfg.tickStep > 0 ? cfg.tickStep : 1;
+    const out = [];
+    if (isLog) {
+      const e0 = Math.ceil(Math.log10(min) / step) * step;
+      const e1 = Math.log10(max);
+      for (let e = e0; e <= e1 + 1e-12; e += step) {
+        const v = Math.pow(10, e);
+        if (v >= min * (1 - 1e-9) && v <= max * (1 + 1e-9)) out.push(v);
+      }
+    } else {
+      const start = Math.ceil(min / step) * step;
+      for (let v = start; v <= max + step * 1e-9; v += step) out.push(v);
+    }
+    return out.length ? out : niceTicks(min, max, cfg.ticks);
+  }
+  if (mode === 'data') {
+    const vals = (dataVals || []).filter((v) => isFinite(v) && (!isLog || v > 0) && v >= min * (1 - 1e-9) && v <= max * (1 + 1e-9));
+    vals.sort((a, b) => a - b);
+    const uniq = [];
+    for (const v of vals) if (!uniq.length || v !== uniq[uniq.length - 1]) uniq.push(v);
+    if (!uniq.length) return niceTicks(min, max, cfg.ticks);
+    if (uniq.length <= cfg.ticks) return uniq;
+    const s = Math.ceil(uniq.length / cfg.ticks);
+    const out = [];
+    for (let i = 0; i < uniq.length; i += s) out.push(uniq[i]);
+    if (out[out.length - 1] !== uniq[uniq.length - 1]) out.push(uniq[uniq.length - 1]);
+    return out;
+  }
+  if (mode === 'custom') {
+    const toks = String(cfg.customTicks || '').split(/[\s,;]+/).filter((t) => t !== '');
+    const out = [];
+    for (const t of toks) {
+      const v = Number(t);
+      if (isFinite(v) && (!isLog || v > 0) && v >= min * (1 - 1e-9) && v <= max * (1 + 1e-9)) out.push(v);
+    }
+    out.sort((a, b) => a - b);
+    return out.length ? out : niceTicks(min, max, cfg.ticks);
+  }
+  return isLog ? logTicks(min, max) : niceTicks(min, max, cfg.ticks);
+}
+
+function sX(v, scale, L, W) {
+  if (scale === 'log') return L + (Math.log10(v) - Math.log10(view.xMin)) / (Math.log10(view.xMax) - Math.log10(view.xMin)) * W;
+  return L + (v - view.xMin) / (view.xMax - view.xMin) * W;
+}
+
+function sY(v, scale, B, H) {
+  if (scale === 'log') return B - (Math.log10(v) - Math.log10(view.yMin)) / (Math.log10(view.yMax) - Math.log10(view.yMin)) * H;
+  return B - (v - view.yMin) / (view.yMax - view.yMin) * H;
+}
+
+function invX(p, scale, L, W) {
+  if (scale === 'log') return Math.pow(10, Math.log10(view.xMin) + (p - L) / W * (Math.log10(view.xMax) - Math.log10(view.xMin)));
+  return view.xMin + (p - L) / W * (view.xMax - view.xMin);
+}
+
+function invY(p, scale, B, H) {
+  if (scale === 'log') return Math.pow(10, Math.log10(view.yMin) + (B - p) / H * (Math.log10(view.yMax) - Math.log10(view.yMin)));
+  return view.yMin + (B - p) / H * (view.yMax - view.yMin);
+}
+
+function getPlotRect(cfg) {
+  let titleH = 12;
+  if (cfg.title) titleH += (cfg.titleSize || 18) + 4;
+  const scaleY = cfg.yScale;
+  const yTicks = computeTicks(cfg, view.yMin, view.yMax, scaleY === 'log', collectData().allY);
+  ctx.font = '11px ' + MONO;
+  let yw = 0;
+  for (const t of yTicks) yw = Math.max(yw, ctx.measureText(fmt(t)).width);
+  const L = Math.min(130, 22 + yw + 18);
+  const R = 32;
+  const T = titleH;
+  const B = cssH - 42;
+  return { L, R, T, B, W: cssW - L - R, H: B - T };
+}
+
+// ---------- 绘制 ----------
+function drawSmooth(ctx, pts) {
+  const n = pts.length;
+  if (n < 2) return;
+  const dx = new Array(n - 1), dy = new Array(n - 1), m = new Array(n);
+  for (let i = 0; i < n - 1; i++) {
+    dx[i] = pts[i + 1][0] - pts[i][0];
+    dy[i] = pts[i + 1][1] - pts[i][1];
+  }
+  const slope = (i) => (dx[i] !== 0 ? dy[i] / dx[i] : 0);
+  m[0] = slope(0); m[n - 1] = slope(n - 2);
+  for (let i = 1; i < n - 1; i++) {
+    const a = slope(i - 1), b = slope(i);
+    m[i] = a * b <= 0 ? 0 : 2 / (1 / a + 1 / b);
+  }
+  ctx.beginPath();
+  ctx.moveTo(pts[0][0], pts[0][1]);
+  for (let i = 0; i < n - 1; i++) {
+    const t = dx[i] / 3;
+    ctx.bezierCurveTo(
+      pts[i][0] + t, pts[i][1] + t * m[i],
+      pts[i + 1][0] - t, pts[i + 1][1] - t * m[i + 1],
+      pts[i + 1][0], pts[i + 1][1]
+    );
+  }
+  ctx.stroke();
+}
+
+function isSorted(arr) {
+  for (let i = 1; i < arr.length; i++) if (arr[i] < arr[i - 1]) return false;
+  return true;
+}
+
+function draw(ctx) {
+  const cfg = readConfig();
+  const T = THEMES[theme];
+  ctx.clearRect(0, 0, cssW, cssH);
+  ctx.fillStyle = T.bg;
+  ctx.fillRect(0, 0, cssW, cssH);
+  computeView(cfg);
+  const scaleX = cfg.xScale, scaleY = cfg.yScale;
+  const rect = getPlotRect(cfg);
+  const L = rect.L, T_ = rect.T, B = rect.B;
+  const plotW = rect.W, plotH = rect.H;
+  if (plotW <= 10 || plotH <= 10) return;
+  const logOk = (v, scale) => !(scale === 'log' && v <= 0);
+  const { allX, allY } = collectData();
+  const xTicks = computeTicks(cfg, view.xMin, view.xMax, scaleX === 'log', allX);
+  const yTicks = computeTicks(cfg, view.yMin, view.yMax, scaleY === 'log', allY);
+
+  const gx = (v) => sX(v, scaleX, L, plotW);
+  const gy = (v) => sY(v, scaleY, B, plotH);
+  if (cfg.grid) {
+    ctx.lineWidth = 1;
+    ctx.strokeStyle = T.grid;
+    ctx.setLineDash([]);
+    for (const t of xTicks) {
+      const p = gx(t);
+      ctx.beginPath(); ctx.moveTo(p, T_); ctx.lineTo(p, B); ctx.stroke();
+    }
+    for (const t of yTicks) {
+      const p = gy(t);
+      ctx.beginPath(); ctx.moveTo(L, p); ctx.lineTo(L + plotW, p); ctx.stroke();
+    }
+    if (cfg.tickMode === 'auto' && scaleX === 'log' && view.xMin > 0 && view.xMax > view.xMin &&
+        plotW / (Math.log10(view.xMax) - Math.log10(view.xMin)) > 44) {
+      ctx.strokeStyle = T.minor;
+      for (let e = Math.ceil(Math.log10(view.xMin)); e <= Math.floor(Math.log10(view.xMax)); e++) {
+        for (let m = 2; m <= 9; m++) {
+          const v = m * Math.pow(10, e);
+          if (v < view.xMin || v > view.xMax) continue;
+          const p = gx(v);
+          ctx.beginPath(); ctx.moveTo(p, T_); ctx.lineTo(p, B); ctx.stroke();
+        }
+      }
+    }
+    if (cfg.tickMode === 'auto' && scaleY === 'log' && view.yMin > 0 && view.yMax > view.yMin &&
+        plotH / (Math.log10(view.yMax) - Math.log10(view.yMin)) > 44) {
+      ctx.strokeStyle = T.minor;
+      for (let e = Math.ceil(Math.log10(view.yMin)); e <= Math.floor(Math.log10(view.yMax)); e++) {
+        for (let m = 2; m <= 9; m++) {
+          const v = m * Math.pow(10, e);
+          if (v < view.yMin || v > view.yMax) continue;
+          const p = gy(v);
+          ctx.beginPath(); ctx.moveTo(L, p); ctx.lineTo(L + plotW, p); ctx.stroke();
+        }
+      }
+    }
+  }
+
+  ctx.strokeStyle = T.frame;
+  ctx.strokeRect(L, T_, plotW, plotH);
+  ctx.fillStyle = T.text;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'top';
+  for (const t of xTicks) ctx.fillText(fmt(t), gx(t), B + 5);
+  ctx.textAlign = 'right';
+  ctx.textBaseline = 'middle';
+  for (const t of yTicks) ctx.fillText(fmt(t), L - 7, gy(t));
+
+  labelRects = {};
+  const fontOf = (size) => size + 'px ' + (cfg.axisFont || 'system-ui');
+  if (cfg.xLabel) {
+    const size = cfg.xLabelSize;
+    ctx.font = fontOf(size);
+    ctx.fillStyle = cfg.xLabelTheme ? T.text : cfg.xLabelColor;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+    const lx = L + labelPos.xAxis.t * plotW;
+    const ly = B + labelPos.xAxis.d;
+    ctx.fillText(cfg.xLabel, lx, ly);
+    const w = ctx.measureText(cfg.xLabel).width;
+    labelRects.xAxis = { x: lx - w / 2 - 4, y: ly - size - 5, w: w + 8, h: size + 9 };
+  }
+  if (cfg.yLabel) {
+    const size = cfg.yLabelSize;
+    ctx.font = fontOf(size);
+    ctx.fillStyle = cfg.yLabelTheme ? T.text : cfg.yLabelColor;
+    const cx = labelPos.yAxis.d;
+    const cy = T_ + labelPos.yAxis.t * plotH;
+    ctx.save();
+    ctx.translate(cx, cy);
+    ctx.rotate(-Math.PI / 2);
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(cfg.yLabel, 0, 0);
+    ctx.restore();
+    const w = ctx.measureText(cfg.yLabel).width;
+    labelRects.yAxis = { x: cx - size - 7, y: cy - w / 2 - 5, w: size + 14, h: w + 10 };
+  }
+  if (cfg.title) {
+    const size = cfg.titleSize;
+    ctx.font = '600 ' + fontOf(size);
+    ctx.fillStyle = cfg.titleTheme ? T.title : cfg.titleColor;
+    ctx.textAlign = 'center'; ctx.textBaseline = 'top';
+    const tx = labelPos.title.x * cssW;
+    const ty = labelPos.title.y;
+    ctx.fillText(cfg.title, tx, ty);
+    const w = ctx.measureText(cfg.title).width;
+    labelRects.title = { x: tx - w / 2 - 4, y: ty - 3, w: w + 8, h: size + 7 };
+  }
+
+  // 曲线
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(L, T_, plotW, plotH);
+  ctx.clip();
+  let drawnAny = false;
+  for (const c of curves) {
+    if (!c.visible || c.xs.length < 2) continue;
+    const stride = c.xs.length > 10000 ? Math.ceil(c.xs.length / 8000) : 1;
+    const pts = [];
+    for (let i = 0; i < c.xs.length; i += stride) {
+      const x = c.xs[i], y = c.ys[i];
+      if (!isFinite(x) || !isFinite(y)) continue;
+      if (!logOk(x, scaleX) || !logOk(y, scaleY)) continue;
+      pts.push([sX(x, scaleX, L, plotW), sY(y, scaleY, B, plotH)]);
+    }
+    if (pts.length < 2) continue;
+    drawnAny = true;
+    ctx.strokeStyle = c.color;
+    ctx.lineWidth = 2;
+    ctx.lineJoin = 'round';
+    if (cfg.smooth && isSorted(c.xs)) drawSmooth(ctx, pts);
+    else {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0], pts[0][1]);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
+      ctx.stroke();
+    }
+    if (cfg.points && c.xs.length <= 3000) {
+      ctx.fillStyle = c.color;
+      for (const p of pts) {
+        ctx.beginPath();
+        ctx.arc(p[0], p[1], 3, 0, Math.PI * 2);
+        ctx.fill();
+      }
+    }
+  }
+  ctx.restore();
+
+  if (!drawnAny) {
+    ctx.fillStyle = T.axis;
+    ctx.font = '13px system-ui, sans-serif';
+    ctx.textAlign = 'center';
+    ctx.textBaseline = 'middle';
+    ctx.fillText('当前视图无可见数据点(数据不足或可能被 Log 坐标过滤)', L + plotW / 2, T_ + plotH / 2);
+  }
+
+  // 图例
+  legendItems = [];
+  const vis = curves.filter((c) => c.visible && c.xs.length >= 2);
+  if (vis.length) {
+    ctx.font = '12px system-ui, sans-serif';
+    let wmax = 0;
+    for (const c of vis) wmax = Math.max(wmax, ctx.measureText(c.name).width);
+    const lw = Math.min(180, wmax + 38);
+    const lh = vis.length * 18 + 8;
+    const lx = L + plotW - lw - 8;
+    const ly = T_ + 8;
+    ctx.globalAlpha = 0.88;
+    ctx.fillStyle = T.bg;
+    ctx.fillRect(lx, ly, lw, lh);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = T.frame;
+    ctx.strokeRect(lx, ly, lw, lh);
+    vis.forEach((c, k) => {
+      const y = ly + 8 + k * 18 + 7;
+      ctx.fillStyle = c.color;
+      ctx.beginPath(); ctx.arc(lx + 12, y, 4, 0, Math.PI * 2); ctx.fill();
+      ctx.fillStyle = T.text;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(c.name, lx + 22, y);
+      legendItems.push({ x: lx, y: ly + k * 18, w: lw, h: 18, ci: curves.indexOf(c) });
+    });
+  }
+
+  if (zoomRect) {
+    ctx.strokeStyle = '#2563eb';
+    ctx.lineWidth = 1;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(
+      Math.min(zoomRect.x1, zoomRect.x2), Math.min(zoomRect.y1, zoomRect.y2),
+      Math.abs(zoomRect.x2 - zoomRect.x1), Math.abs(zoomRect.y2 - zoomRect.y1)
+    );
+    ctx.setLineDash([]);
+  }
+
+  if (hover && hover.si != null) {
+    const c = curves[hover.si];
+    if (c && c.visible && hover.xi < c.xs.length) {
+      const px = sX(c.xs[hover.xi], scaleX, L, plotW), py = sY(c.ys[hover.xi], scaleY, B, plotH);
+      ctx.strokeStyle = '#ffffff';
+      ctx.lineWidth = 3;
+      ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = 2;
+      ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+}
+
+function redraw() {
+  if (redrawPending) return;
+  redrawPending = true;
+  requestAnimationFrame(() => {
+    redrawPending = false;
+    try { draw(ctx); } catch (err) { warn('绘制出错:' + (err && err.message ? err.message : err)); }
+  });
+}
+
+// ---------- 交互 ----------
+function canvasPos(e) {
+  const r = canvas.getBoundingClientRect();
+  return { x: e.clientX - r.left, y: e.clientY - r.top };
+}
+
+function panView(dx, dy) {
+  const r = getPlotRect(readConfig());
+  const spanX = view.xMax - view.xMin, spanY = view.yMax - view.yMin;
+  const W = Math.max(1, r.W), H = Math.max(1, r.H);
+  view.xMin = drag.x0 - spanX * dx / W;
+  view.xMax = drag.x0 + spanX - spanX * dx / W;
+  view.yMin = drag.y0 + spanY * dy / H;
+  view.yMax = drag.y0 + spanY + spanY * dy / H;
+  syncRangeInputs();
+  redraw();
+}
+
+function updateLabelDrag(p) {
+  const cfg = readConfig();
+  const rect = getPlotRect(cfg);
+  if (drag.kind === 'title') {
+    labelPos.title.x = Math.min(1, Math.max(0, p.x / cssW));
+    labelPos.title.y = Math.min(cssH - 12, Math.max(0, p.y));
+  } else if (drag.kind === 'xAxis') {
+    labelPos.xAxis.t = Math.min(1, Math.max(0, (p.x - rect.L) / rect.W));
+    labelPos.xAxis.d = p.y - rect.B;
+  } else if (drag.kind === 'yAxis') {
+    labelPos.yAxis.t = Math.min(1, Math.max(0, (p.y - rect.T) / rect.H));
+    labelPos.yAxis.d = p.x;
+  }
+  redraw();
+}
+
+function findNearest(px, py) {
+  const cfg = readConfig();
+  const scaleX = cfg.xScale, scaleY = cfg.yScale;
+  const rect = getPlotRect(cfg);
+  const L = rect.L, B = rect.B;
+  const plotW = rect.W, plotH = rect.H;
+  if (px < L || px > L + plotW || py < rect.T || py > B) return null;
+  const logOk = (v, scale) => !(scale === 'log' && v <= 0);
+  let best = null;
+  for (let ci = 0; ci < curves.length; ci++) {
+    const c = curves[ci];
+    if (!c.visible || !c.xs.length) continue;
+    const stride = c.xs.length > 4000 ? Math.ceil(c.xs.length / 4000) : 1;
+    for (let i = 0; i < c.xs.length; i += stride) {
+      const x = c.xs[i], y = c.ys[i];
+      if (!isFinite(x) || !isFinite(y) || !logOk(x, scaleX) || !logOk(y, scaleY)) continue;
+      const dx = sX(x, scaleX, L, plotW) - px;
+      const dy = sY(y, scaleY, B, plotH) - py;
+      const d2 = dx * dx + dy * dy;
+      if (!best || d2 < best.d2) best = { d2, ci, xi: i, x, y };
+    }
+  }
+  if (!best || best.d2 > 400) return null;
+  return best;
+}
+
+canvas.addEventListener('mousemove', (e) => {
+  const p = canvasPos(e);
+  if (drag) {
+    if (drag.mode === 'label') { updateLabelDrag(p); }
+    else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
+    else panView(p.x - drag.sx, p.y - drag.sy);
+    return;
+  }
+  const near = findNearest(p.x, p.y);
+  if (near) {
+    hover = { px: p.x, py: p.y, si: near.ci, xi: near.xi };
+    const c = curves[near.ci];
+    const tip = $('tooltip');
+    tip.style.display = 'block';
+    tip.innerHTML = '<b>' + esc(c.name) + '</b><br>x = ' + fmt(near.x) + '<br>y = ' + fmt(near.y);
+    const wrap = $('canvasWrap');
+    const wr = wrap.getBoundingClientRect();
+    const tw = tip.offsetWidth, th = tip.offsetHeight;
+    let tx = p.x + 14, ty = p.y - th - 8;
+    if (tx + tw > wr.width - 4) tx = p.x - tw - 14;
+    if (ty < 0) ty = p.y + 14;
+    tip.style.left = tx + 'px';
+    tip.style.top = ty + 'px';
+    $('status').textContent = '曲线:' + c.name + '  x = ' + fmt(near.x) + '  y = ' + fmt(near.y);
+  } else {
+    hover = { px: p.x, py: p.y, si: null, xi: null };
+    $('tooltip').style.display = 'none';
+    const cfg = readConfig();
+    const rect = getPlotRect(cfg);
+    $('status').textContent = 'x = ' + fmt(invX(p.x, cfg.xScale, rect.L, rect.W)) + '  y = ' + fmt(invY(p.y, cfg.yScale, rect.B, rect.H));
+  }
+  redraw();
+});
+
+canvas.addEventListener('mouseleave', () => {
+  hover = null;
+  $('tooltip').style.display = 'none';
+  redraw();
+});
+
+canvas.addEventListener('mousedown', (e) => {
+  if (e.button !== 0) return;
+  const p = canvasPos(e);
+  for (const it of legendItems) {
+    if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) {
+      curves[it.ci].visible = !curves[it.ci].visible;
+      redraw();
+      return;
+    }
+  }
+  for (const k of ['title', 'xAxis', 'yAxis']) {
+    const r = labelRects[k];
+    if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
+      drag = { mode: 'label', kind: k, sx: p.x, sy: p.y };
+      canvas.style.cursor = 'move';
+      return;
+    }
+  }
+  drag = { mode: panMode || spaceDown ? 'pan' : 'zoom', sx: p.x, sy: p.y, x0: view.xMin, y0: view.yMin };
+  canvas.style.cursor = drag.mode === 'pan' ? 'grabbing' : 'crosshair';
+});
+
+window.addEventListener('mousemove', (e) => {
+  if (drag && e.target !== canvas) {
+    const r = canvas.getBoundingClientRect();
+    const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+    if (drag.mode === 'label') { updateLabelDrag(p); }
+    else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
+    else panView(p.x - drag.sx, p.y - drag.sy);
+  }
+});
+
+window.addEventListener('mouseup', () => {
+  if (!drag) return;
+  if (drag.mode === 'label') {
+    saveLabelPos();
+  } else if (drag.mode === 'zoom' && zoomRect) {
+    const w = Math.abs(zoomRect.x2 - zoomRect.x1), h = Math.abs(zoomRect.y2 - zoomRect.y1);
+    if (w > 5 && h > 5) {
+      const cfg = readConfig();
+      const rect = getPlotRect(cfg);
+      view.xMin = invX(Math.min(zoomRect.x1, zoomRect.x2), cfg.xScale, rect.L, rect.W);
+      view.xMax = invX(Math.max(zoomRect.x1, zoomRect.x2), cfg.xScale, rect.L, rect.W);
+      view.yMin = invY(Math.max(zoomRect.y1, zoomRect.y2), cfg.yScale, rect.B, rect.H);
+      view.yMax = invY(Math.min(zoomRect.y1, zoomRect.y2), cfg.yScale, rect.B, rect.H);
+      syncRangeInputs();
+    }
+  }
+  drag = null; zoomRect = null;
+  canvas.style.cursor = panMode || spaceDown ? 'grab' : 'crosshair';
+  redraw();
+});
+
+canvas.addEventListener('dblclick', resetView);
+
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'Space') {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    e.preventDefault();
+    spaceDown = true;
+    canvas.style.cursor = 'grab';
+  }
+});
+window.addEventListener('keyup', (e) => {
+  if (e.code === 'Space') { spaceDown = false; canvas.style.cursor = panMode ? 'grab' : 'crosshair'; }
+});
+
+// ---------- 控件 ----------
+$('plotBtn').addEventListener('click', plot);
+$('clearBtn').addEventListener('click', clearAll);
+$('exampleBtn').addEventListener('click', () => {
+  if (!curves.length) addCurve();
+  while (curves.length > 1) {
+    const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
+    if (sec) sec.remove();
+    curves.pop();
+  }
+  const xv = [], yv = [];
+  for (let i = 0; i <= 100; i++) {
+    const x = i * 0.1;
+    xv.push(x.toFixed(2));
+    yv.push(Math.sin(x).toFixed(4));
+  }
+  const first = curves[0];
+  const sec0 = curvesBox.querySelector('.curve-sec[data-id="' + first.id + '"]');
+  sec0.querySelector('.xData').value = xv.join(' ');
+  sec0.querySelector('.yData').value = yv.join(' ');
+  const c2 = addCurve('曲线 2');
+  const sec2 = curvesBox.querySelector('.curve-sec[data-id="' + c2.id + '"]');
+  const x2v = [], y2v = [];
+  for (let i = 0; i <= 100; i++) {
+    const x = i * 0.1;
+    x2v.push(x.toFixed(2));
+    y2v.push(Math.cos(x).toFixed(4));
+  }
+  sec2.querySelector('.xData').value = x2v.join(' ');
+  sec2.querySelector('.yData').value = y2v.join(' ');
+  plot();
+});
+$('pngBtn').addEventListener('click', () => {
+  const scale = 2;
+  const c = document.createElement('canvas');
+  c.width = cssW * scale;
+  c.height = cssH * scale;
+  const c2 = c.getContext('2d');
+  c2.scale(scale, scale);
+  draw(c2);
+  c.toBlob((blob) => {
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = '曲线图.png';
+    a.click();
+    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+    status('PNG 已导出');
+  }, 'image/png');
+});
+$('panBtn').addEventListener('click', () => {
+  panMode = !panMode;
+  $('panBtn').setAttribute('aria-pressed', String(panMode));
+  $('panBtn').textContent = panMode ? '缩放' : '平移';
+  canvas.style.cursor = panMode ? 'grab' : 'crosshair';
+});
+$('resetBtn').addEventListener('click', resetView);
+$('darkBtn').addEventListener('click', () => {
+  theme = theme === 'light' ? 'dark' : 'light';
+  document.body.classList.toggle('dark', theme === 'dark');
+  $('darkBtn').textContent = theme === 'dark' ? '亮色模式' : '暗色模式';
+  redraw();
+});
+
+for (const id of ['titleInput', 'titleSize', 'titleColor', 'titleTheme',
+  'xLabelInput', 'yLabelInput', 'axisFontSel',
+  'xLabelSize', 'xLabelColor', 'xLabelTheme', 'yLabelSize', 'yLabelColor', 'yLabelTheme',
+  'xScaleSel', 'yScaleSel', 'tickInput', 'tickModeSel', 'tickStep', 'customTicks',
+  'gridChk', 'smoothSel', 'pointsChk']) {
+  const el = $(id);
+  el.addEventListener('input', redraw);
+  el.addEventListener('change', redraw);
+}
+
+function syncTickModeUI() {
+  const m = $('tickModeSel').value;
+  $('tickStepWrap').hidden = m !== 'step';
+  $('customTicksWrap').hidden = m !== 'custom';
+}
+$('tickModeSel').addEventListener('change', syncTickModeUI);
+syncTickModeUI();
+
+function esc(s) {
+  return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function addCurve(name) {
+  curveSeq++;
+  const color = PALETTE[(curveSeq - 1) % PALETTE.length];
+  const displayName = name || ('曲线 ' + curveSeq);
+  const sec = document.createElement('div');
+  sec.className = 'curve-sec';
+  sec.dataset.id = 'c' + curveSeq;
+  sec.innerHTML =
+    '<div class="curve-head">' +
+    '<input class="curve-name" type="text" value="' + esc(displayName) + '" placeholder="曲线名称">' +
+    '<input class="curve-color" type="color" value="' + color + '">' +
+    '<label class="chk" title="显示/隐藏"><input class="curve-vis" type="checkbox" checked> 显示</label>' +
+    '<button class="btn-sm" type="button">删除</button>' +
+    '</div>' +
+    '<label class="f">X 数据 <textarea class="xData" spellcheck="false" placeholder="粘贴 X 值…"></textarea></label>' +
+    '<label class="f">Y 数据 <textarea class="yData" spellcheck="false" placeholder="粘贴 Y 值…"></textarea></label>';
+  curvesBox.append(sec);
+  const curve = { id: 'c' + curveSeq, name: displayName, color: color, visible: true, xs: [], ys: [] };
+  curves.push(curve);
+
+  const nameInput = sec.querySelector('.curve-name');
+  const colorInput = sec.querySelector('.curve-color');
+  const visInput = sec.querySelector('.curve-vis');
+  nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); });
+  colorInput.addEventListener('input', () => { curve.color = colorInput.value; redraw(); });
+  visInput.addEventListener('change', () => { curve.visible = visInput.checked; redraw(); });
+  sec.querySelector('.btn-sm').addEventListener('click', () => {
+    const idx = curves.indexOf(curve);
+    if (idx >= 0) curves.splice(idx, 1);
+    sec.remove();
+    resetView();
+  });
+  for (const ta of [sec.querySelector('.xData'), sec.querySelector('.yData')]) {
+    ta.addEventListener('keydown', (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter') { e.preventDefault(); plot(); }
+    });
+    ta.addEventListener('paste', () => setTimeout(plot, 60));
+  }
+  return curve;
+}
+
+$('addCurveBtn').addEventListener('click', () => addCurve());
+
+// ---------- 工具与初始化 ----------
+function status(msg) { $('status').textContent = msg; }
+function warn(msg) { $('status').textContent = '⚠ ' + msg; }
+
+function saveLabelPos() {
+  try { localStorage.setItem('xy-plot-labelpos', JSON.stringify(labelPos)); } catch (e) {}
+}
+function loadLabelPos() {
+  try {
+    const s = localStorage.getItem('xy-plot-labelpos');
+    if (!s) return;
+    const o = JSON.parse(s);
+    if (o.title) labelPos.title = o.title;
+    if (o.xAxis) labelPos.xAxis = o.xAxis;
+    if (o.yAxis) labelPos.yAxis = o.yAxis;
+  } catch (e) {}
+}
+
+function resize() {
+  const rect = canvas.parentElement.getBoundingClientRect();
+  dpr = window.devicePixelRatio || 1;
+  cssW = Math.max(50, rect.width);
+  cssH = Math.max(50, rect.height);
+  canvas.width = Math.round(cssW * dpr);
+  canvas.height = Math.round(cssH * dpr);
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  redraw();
+}
+
+window.addEventListener('resize', resize);
+resize();
+loadLabelPos();
+addCurve();
+document.body.dataset.ready = '1';
+</script>
+</body>
+</html>
