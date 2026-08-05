@@ -151,6 +151,8 @@ input:focus, select:focus, textarea:focus{
           <button id="addCurveBtn" class="btn" type="button">+ 新增曲线</button>
           <div class="hint">每条曲线有自己的 X / Y 输入框和颜色;X 留空时自动用 0, 1, 2, …;数量不一致时按较少的一侧绘制。</div>
           <div class="info-line" id="info">尚未绘图</div>
+          <div class="info-line" id="selInfo">点击数据点可添加标记</div>
+          <div class="row"><button id="clearSelBtn" class="btn-sm" type="button">清除全部标记</button></div>
         </div>
       </details>
 
@@ -188,7 +190,6 @@ input:focus, select:focus, textarea:focus{
             <label class="f">连线
               <select id="smoothSel"><option value="line">折线</option><option value="smooth">平滑曲线</option></select>
             </label>
-            <label class="chk"><input id="pointsChk" type="checkbox"> 数据点</label>
           </div>
         </div>
       </details>
@@ -201,6 +202,7 @@ input:focus, select:focus, textarea:focus{
             · 双击画布恢复自动范围<br>
             · 按住空格键拖动画布可平移<br>
             · 鼠标悬停数据点显示精确坐标<br>
+            · 单击数据点可添加/取消标记,支持同时标记多个点<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
@@ -244,6 +246,7 @@ const view = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, autoX: true, autoY: true };
 let theme = 'light';
 let panMode = false, spaceDown = false;
 let hover = null;
+let selected = [];        // [{ci, xi}] 多个选中的点
 let zoomRect = null;
 let drag = null;
 let redrawPending = false;
@@ -321,8 +324,7 @@ function readConfig() {
     tickStep: num($('tickStep'), 1),
     customTicks: $('customTicks').value,
     grid: $('gridChk').checked,
-    smooth: $('smoothSel').value === 'smooth',
-    points: $('pointsChk').checked
+    smooth: $('smoothSel').value === 'smooth'
   };
 }
 
@@ -379,6 +381,8 @@ function computeView(cfg) {
 
 function resetView() {
   view.autoX = true; view.autoY = true;
+  selected = [];
+  $('selInfo').textContent = '点击数据点可添加标记';
   redraw();
 }
 
@@ -677,14 +681,6 @@ function draw(ctx) {
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
       ctx.stroke();
     }
-    if (cfg.points && c.xs.length <= 3000) {
-      ctx.fillStyle = c.color;
-      for (const p of pts) {
-        ctx.beginPath();
-        ctx.arc(p[0], p[1], 3, 0, Math.PI * 2);
-        ctx.fill();
-      }
-    }
   }
   ctx.restore();
 
@@ -745,6 +741,28 @@ function draw(ctx) {
       ctx.strokeStyle = c.color;
       ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.stroke();
+    }
+  }
+
+  // 选中的点:固定高亮并显示坐标
+  for (const s of selected) {
+    const c = curves[s.ci];
+    if (c && c.visible && s.xi < c.xs.length) {
+      const x = c.xs[s.xi], y = c.ys[s.xi];
+      if (isFinite(x) && isFinite(y) && logOk(x, scaleX) && logOk(y, scaleY)) {
+        const px = sX(x, scaleX, L, plotW), py = sY(y, scaleY, B, plotH);
+        ctx.strokeStyle = '#ffffff';
+        ctx.lineWidth = 3.5;
+        ctx.beginPath(); ctx.arc(px, py, 7.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.strokeStyle = c.color;
+        ctx.lineWidth = 2.5;
+        ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.fillStyle = T.text;
+        ctx.font = '11px ' + MONO;
+        ctx.textAlign = 'left';
+        ctx.textBaseline = 'bottom';
+        ctx.fillText(c.name + ' (' + fmt(x) + ', ' + fmt(y) + ')', px + 11, py - 10);
+      }
     }
   }
 }
@@ -891,13 +909,46 @@ window.addEventListener('mousemove', (e) => {
   }
 });
 
-window.addEventListener('mouseup', () => {
+function selectPointAt(px, py) {
+  const near = findNearest(px, py);
+  if (near) {
+    const idx = selected.findIndex((s) => s.ci === near.ci && s.xi === near.xi);
+    if (idx >= 0) selected.splice(idx, 1);
+    else selected.push({ ci: near.ci, xi: near.xi });
+  }
+  updateSelInfo();
+  redraw();
+}
+
+function updateSelInfo() {
+  const box = $('selInfo');
+  if (!selected.length) {
+    box.textContent = '点击数据点可添加标记';
+    status('单击数据点添加/取消标记');
+    return;
+  }
+  let html = '标记点 (' + selected.length + '):<br>';
+  const shown = [];
+  for (const s of selected) {
+    const c = curves[s.ci];
+    if (!c || s.xi >= c.xs.length) continue;
+    shown.push(esc(c.name) + ' (' + fmt(c.xs[s.xi]) + ', ' + fmt(c.ys[s.xi]) + ')');
+  }
+  html += shown.join('<br>');
+  box.innerHTML = html;
+  status('已标记 ' + shown.length + ' 个点');
+}
+
+window.addEventListener('mouseup', (e) => {
   if (!drag) return;
   if (drag.mode === 'label') {
     saveState();
-  } else if (drag.mode === 'zoom' && zoomRect) {
-    const w = Math.abs(zoomRect.x2 - zoomRect.x1), h = Math.abs(zoomRect.y2 - zoomRect.y1);
-    if (w > 5 && h > 5) {
+  } else if (drag.mode === 'zoom') {
+    const w = zoomRect ? Math.abs(zoomRect.x2 - zoomRect.x1) : 0;
+    const h = zoomRect ? Math.abs(zoomRect.y2 - zoomRect.y1) : 0;
+    if (w <= 5 && h <= 5) {
+      selectPointAt(drag.sx, drag.sy);
+    } else {
       const cfg = readConfig();
       const rect = getPlotRect(cfg);
       view.xMin = invX(Math.min(zoomRect.x1, zoomRect.x2), cfg.xScale, rect.L, rect.W);
@@ -906,6 +957,10 @@ window.addEventListener('mouseup', () => {
       view.yMax = invY(Math.min(zoomRect.y1, zoomRect.y2), cfg.yScale, rect.B, rect.H);
       syncRangeInputs();
     }
+  } else if (drag.mode === 'pan') {
+    const r = canvas.getBoundingClientRect();
+    const p = { x: e.clientX - r.left, y: e.clientY - r.top };
+    if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 5) selectPointAt(drag.sx, drag.sy);
   }
   drag = null; zoomRect = null;
   canvas.style.cursor = panMode || spaceDown ? 'grab' : 'crosshair';
@@ -930,6 +985,11 @@ window.addEventListener('keyup', (e) => {
 // ---------- 控件 ----------
 $('plotBtn').addEventListener('click', plot);
 $('clearBtn').addEventListener('click', clearAll);
+$('clearSelBtn').addEventListener('click', () => {
+  selected = [];
+  updateSelInfo();
+  redraw();
+});
 $('exampleBtn').addEventListener('click', () => {
   if (!curves.length) addCurve();
   while (curves.length > 1) {
@@ -1000,7 +1060,7 @@ for (const id of ['titleInput', 'titleSize', 'titleColor', 'titleTheme',
   'xLabelInput', 'yLabelInput', 'axisFontSel',
   'xLabelSize', 'xLabelColor', 'xLabelTheme', 'yLabelSize', 'yLabelColor', 'yLabelTheme',
   'xScaleSel', 'yScaleSel', 'tickInput', 'tickModeSel', 'tickStep', 'customTicks',
-  'gridChk', 'smoothSel', 'pointsChk']) {
+  'gridChk', 'smoothSel']) {
   const el = $(id);
   el.addEventListener('input', redraw);
   el.addEventListener('change', redraw);
@@ -1166,7 +1226,7 @@ function saveState() {
         yLabelSize: $('yLabelSize').value, yLabelColor: $('yLabelColor').value, yLabelTheme: $('yLabelTheme').checked,
         xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
         ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
-        grid: $('gridChk').checked, smooth: $('smoothSel').value, points: $('pointsChk').checked
+        grid: $('gridChk').checked, smooth: $('smoothSel').value
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
@@ -1198,7 +1258,7 @@ function loadState() {
     set('yLabelSize', s.yLabelSize); set('yLabelColor', s.yLabelColor); setChk('yLabelTheme', s.yLabelTheme);
     set('xScaleSel', s.xScale); set('yScaleSel', s.yScale);
     set('tickInput', s.ticks); set('tickModeSel', s.tickMode); set('tickStep', s.tickStep); set('customTicks', s.customTicks);
-    setChk('gridChk', s.grid); set('smoothSel', s.smooth); setChk('pointsChk', s.points);
+    setChk('gridChk', s.grid); set('smoothSel', s.smooth);
   }
   if (state && state.labelPos) {
     if (state.labelPos.title) labelPos.title = state.labelPos.title;
