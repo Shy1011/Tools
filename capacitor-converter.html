@@ -1,0 +1,394 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>电容容值换算 | 三位码 ↔ 容值</title>
+<style>
+  :root {
+    --bg: #f4f6f9;
+    --card: #ffffff;
+    --ink: #1f2937;
+    --muted: #6b7280;
+    --line: #e5e7eb;
+    --accent: #2563eb;
+    --accent-soft: #eff6ff;
+    --ok: #047857;
+    --ok-soft: #ecfdf5;
+    --err: #b91c1c;
+    --err-soft: #fef2f2;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--bg);
+    color: var(--ink);
+    font-family: "Segoe UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif;
+    line-height: 1.6;
+  }
+  .wrap { max-width: 900px; margin: 0 auto; padding: 28px 18px 60px; }
+  header h1 { margin: 0 0 6px; font-size: 24px; }
+  header p { margin: 0 0 20px; color: var(--muted); font-size: 14px; }
+  .card {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 20px 22px;
+    margin-bottom: 18px;
+    box-shadow: 0 1px 3px rgba(0,0,0,.05);
+  }
+  .card h2 { margin: 0 0 4px; font-size: 17px; }
+  .card .hint { margin: 0 0 14px; color: var(--muted); font-size: 13px; }
+  .row { display: flex; gap: 10px; flex-wrap: wrap; }
+  .row input {
+    flex: 1 1 260px;
+    padding: 11px 14px;
+    font-size: 16px;
+    border: 1px solid #d1d5db;
+    border-radius: 9px;
+    outline: none;
+    font-family: inherit;
+  }
+  .row input:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  button {
+    padding: 11px 22px;
+    font-size: 15px;
+    border: none;
+    border-radius: 9px;
+    background: var(--accent);
+    color: #fff;
+    cursor: pointer;
+    font-family: inherit;
+  }
+  button:hover { background: #1d4ed8; }
+  .chips { margin-top: 12px; display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .chips span { color: var(--muted); font-size: 13px; }
+  .chip {
+    padding: 4px 12px;
+    border: 1px solid #d1d5db;
+    border-radius: 999px;
+    font-size: 13px;
+    cursor: pointer;
+    background: #fff;
+    color: var(--ink);
+    font-family: inherit;
+  }
+  .chip:hover { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+  .result {
+    margin-top: 14px;
+    padding: 14px 16px;
+    border-radius: 10px;
+    display: none;
+  }
+  .result.ok { display: block; background: var(--ok-soft); border: 1px solid #a7f3d0; }
+  .result.err { display: block; background: var(--err-soft); border: 1px solid #fecaca; color: var(--err); }
+  .result .big { font-size: 21px; font-weight: 600; color: var(--ink); }
+  .result .big .code { color: var(--accent); }
+  .result .detail { margin-top: 6px; font-size: 14px; color: #374151; }
+  .result .detail div { margin-top: 2px; }
+  .result .note { margin-top: 8px; font-size: 12px; color: var(--muted); }
+  table { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
+  th, td { padding: 7px 10px; border-bottom: 1px solid var(--line); text-align: right; }
+  th:first-child, td:first-child { text-align: left; }
+  th { color: var(--muted); font-weight: 600; white-space: nowrap; }
+  tbody tr:hover { background: #f9fafb; }
+  td code, .big code { font-family: Consolas, "Courier New", monospace; }
+  .tblbox { max-height: 360px; overflow: auto; }
+  .search {
+    width: 100%;
+    margin-top: 8px;
+    padding: 10px 12px;
+    font-size: 14px;
+    border: 1px solid #d1d5db;
+    border-radius: 9px;
+    outline: none;
+    font-family: inherit;
+  }
+  .search:focus { border-color: var(--accent); box-shadow: 0 0 0 3px rgba(37,99,235,.15); }
+  .rule {
+    background: #fffbeb;
+    border: 1px solid #fde68a;
+    border-radius: 12px;
+    padding: 14px 18px;
+    font-size: 13.5px;
+    color: #78350f;
+  }
+  .rule b { color: #92400e; }
+  @media (max-width: 640px) {
+    .wrap { padding: 18px 12px 40px; }
+    th, td { padding: 6px 6px; }
+  }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>电容容值换算工具</h1>
+    <p>三位/四位代码 ↔ 容值 双向换算，支持 pF / nF / µF / mF 单位与 R 码。</p>
+  </header>
+
+  <div class="rule">
+    <b>规则：</b>三位代码 = 前两位有效数字 × 10<sup>第三位</sup>，单位 pF。<br>
+    例：104 = 10 × 10<sup>4</sup> pF = 100 000 pF = 100 nF = 0.1 µF。<br>
+    注意：<b>100 = 10 pF</b>（不是 100 pF），101 = 100 pF，102 = 1 nF，103 = 10 nF，104 = 100 nF，105 = 1 µF。
+  </div>
+
+  <div class="card">
+    <h2>① 三位代码 → 容值</h2>
+    <p class="hint">输入三位码（如 104）、四位码（如 1004）或 R 码（如 4R7），可带误差字母 J / K / M。</p>
+    <div class="row">
+      <input id="codeInput" placeholder="例如：104" autocomplete="off" spellcheck="false">
+      <button onclick="convertCode()">换算</button>
+    </div>
+    <div class="chips">
+      <span>示例：</span>
+      <button class="chip" onclick="fillCode('101')">101</button>
+      <button class="chip" onclick="fillCode('102')">102</button>
+      <button class="chip" onclick="fillCode('103')">103</button>
+      <button class="chip" onclick="fillCode('104')">104</button>
+      <button class="chip" onclick="fillCode('105')">105</button>
+      <button class="chip" onclick="fillCode('223')">223</button>
+      <button class="chip" onclick="fillCode('474')">474</button>
+      <button class="chip" onclick="fillCode('4R7')">4R7</button>
+      <button class="chip" onclick="fillCode('1004')">1004</button>
+    </div>
+    <div class="result" id="codeResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>② 容值 → 三位代码</h2>
+    <p class="hint">输入带单位的容值，如 100nF、0.1uF、10nF、220pF、4.7uF；纯数字默认按 pF 处理（如输入 100 表示 100 pF）。</p>
+    <div class="row">
+      <input id="valInput" placeholder="例如：100nF 或 0.1uF" autocomplete="off" spellcheck="false">
+      <button onclick="convertValue()">换算</button>
+    </div>
+    <div class="chips">
+      <span>示例：</span>
+      <button class="chip" onclick="fillVal('10pF')">10pF</button>
+      <button class="chip" onclick="fillVal('220pF')">220pF</button>
+      <button class="chip" onclick="fillVal('10nF')">10nF</button>
+      <button class="chip" onclick="fillVal('100nF')">100nF</button>
+      <button class="chip" onclick="fillVal('0.1uF')">0.1uF</button>
+      <button class="chip" onclick="fillVal('1uF')">1uF</button>
+      <button class="chip" onclick="fillVal('4.7uF')">4.7uF</button>
+    </div>
+    <div class="result" id="valResult"></div>
+  </div>
+
+  <div class="card">
+    <h2>③ 常见值速查表</h2>
+    <p class="hint">输入数值或代码快速过滤，例如 104、100n、0.47u。</p>
+    <input class="search" id="tblFilter" placeholder="筛选：104 / 100n / 0.47u ..." autocomplete="off" spellcheck="false">
+    <div class="tblbox">
+      <table>
+        <thead>
+          <tr><th>容值</th><th>代码</th><th>pF</th><th>nF</th><th>µF</th></tr>
+        </thead>
+        <tbody id="tblBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<script>
+  "use strict";
+
+  /* ---------- 工具函数 ---------- */
+  function trimNum(x) {
+    if (typeof x === "string") x = parseFloat(x);
+    if (Number.isInteger(x)) return String(x);
+    return String(parseFloat(x.toPrecision(6)));
+  }
+
+  function pFtoStr(pf) {
+    if (pf >= 1e6) return trimNum(pf / 1e6) + " µF";
+    if (pf >= 1e3) return trimNum(pf / 1e3) + " nF";
+    return trimNum(pf) + " pF";
+  }
+
+  function pFtoAll(pf) {
+    return {
+      p: pf.toLocaleString("en-US") + " pF",
+      n: trimNum(pf / 1e3) + " nF",
+      u: trimNum(pf / 1e6) + " µF"
+    };
+  }
+
+  /* ---------- 代码 → pF ---------- */
+  function parseCode(code) {
+    code = (code || "").trim().toUpperCase().replace(/[JKMZ]|\u00b1.*$/g, "");
+    if (!code) return null;
+    let m;
+    m = code.match(/^(\d+)R(\d+)$/);           // R 码：4R7 = 4.7 pF
+    if (m) {
+      let pf = parseFloat(m[1] + "." + m[2]);
+      return { pf: pf, kind: "R码", desc: m[1] + "R" + m[2] + " = " + trimNum(pf) + " pF" };
+    }
+    m = code.match(/^(\d{4})$/);               // 四位码：前三位有效数字
+    if (m) {
+      let mant = parseInt(code.slice(0, 3), 10);
+      let mult = parseInt(code.slice(3), 10);
+      return { pf: mant * Math.pow(10, mult), kind: "四位码", desc: mant + " × 10^" + mult + " pF" };
+    }
+    m = code.match(/^(\d{3})$/);               // 三位码：前两位有效数字
+    if (m) {
+      let mant = parseInt(code.slice(0, 2), 10);
+      let mult = parseInt(code.slice(2), 10);
+      return { pf: mant * Math.pow(10, mult), kind: "三位码", desc: mant + " × 10^" + mult + " pF" };
+    }
+    return null;
+  }
+
+  /* ---------- pF → 代码 ---------- */
+  function codeFromPf(pf) {
+    if (!(pf > 0)) return null;
+    if (pf < 10) {                              // 小于 10 pF 用 R 码
+      let v = Math.round(pf * 10) / 10;
+      let i = Math.floor(v);
+      let d = Math.round((v - i) * 10);
+      return { code: i + "R" + d, pf: i + d / 10, kind: "R码" };
+    }
+    let e = Math.floor(Math.log10(pf));
+    let mant = Math.round(pf / Math.pow(10, e - 1));
+    if (mant >= 100) { mant = 10; e += 1; }
+    if (mant < 10) { mant *= 10; e -= 1; }
+    let mult = e - 1;
+    if (mult < 0) {
+      let v = Math.round(pf * 10) / 10;
+      let i = Math.floor(v);
+      let d = Math.round((v - i) * 10);
+      return { code: i + "R" + d, pf: i + d / 10, kind: "R码" };
+    }
+    return { code: String(mant) + String(mult), pf: mant * Math.pow(10, mult), kind: "三位码" };
+  }
+
+  /* ---------- 容值字符串 → pF ---------- */
+  function parseValue(str) {
+    str = (str || "").trim().toLowerCase().replace(/[\s,]+/g, "");
+    if (!str) return null;
+    let m = str.match(/^(\d+)r(\d+)$/);         // 4R7 → 4.7 pF
+    if (m) return parseFloat(m[1] + "." + m[2]);
+    m = str.match(/^([0-9]+(?:\.[0-9]+)?|\.[0-9]+)(p|n|u|µ|μ|m)?f?$/);
+    if (!m) return null;
+    let v = parseFloat(m[1]);
+    let unit = m[2] || "p";
+    let mult = { p: 1, n: 1e3, u: 1e6, "µ": 1e6, "μ": 1e6, m: 1e9 }[unit];
+    return v * mult;
+  }
+
+  /* ---------- 界面 ---------- */
+  function fillCode(code) {
+    document.getElementById("codeInput").value = code;
+    convertCode();
+  }
+  function fillVal(v) {
+    document.getElementById("valInput").value = v;
+    convertValue();
+  }
+
+  function show(el, ok, html) {
+    el.className = "result " + (ok ? "ok" : "err");
+    el.innerHTML = html;
+  }
+
+  function convertCode() {
+    let raw = document.getElementById("codeInput").value;
+    let el = document.getElementById("codeResult");
+    let r = parseCode(raw);
+    if (!r) {
+      show(el, false, "无法识别的代码：请输三位码（如 104）、四位码（如 1004）或 R 码（如 4R7）。");
+      return;
+    }
+    let all = pFtoAll(r.pf);
+    let html =
+      '<div class="big">' + raw.toUpperCase().replace(/[JKMZ].*$/,"") + ' = <span class="code">' + pFtoStr(r.pf) + "</span></div>" +
+      '<div class="detail">' +
+        "<div>精确值：" + all.p + " = " + all.n + " = " + all.u + "</div>" +
+        "<div>换算：" + r.desc + "</div>" +
+      "</div>" +
+      '<div class="note">' + r.kind + (r.pf >= 1e9 ? "，此值已超出常见电容范围，请核对。" : "") + "</div>";
+    show(el, true, html);
+  }
+
+  function convertValue() {
+    let raw = document.getElementById("valInput").value;
+    let el = document.getElementById("valResult");
+    let pf = parseValue(raw);
+    if (pf === null || isNaN(pf)) {
+      show(el, false, "无法识别的容值：请带单位输入，如 100nF、0.1uF、220pF、4.7uF；纯数字按 pF 处理。");
+      return;
+    }
+    if (pf <= 0) {
+      show(el, false, "容值必须大于 0。");
+      return;
+    }
+    let c = codeFromPf(pf);
+    let all = pFtoAll(pf);
+    let diff = Math.abs(c.pf - pf);
+    let roundNote = "";
+    if (diff > 1e-9) {
+      let pct = (diff / pf) * 100;
+      roundNote = '<div class="note">提示：' + pFtoStr(pf) + " 不是标准 E 系列值，" + c.code + " 代码对应 " + pFtoStr(c.pf) +
+                  "（偏差约 " + trimNum(pct) + "%）。若需精确值请用 4 位码或 R 码。" + "</div>";
+    }
+    let html =
+      '<div class="big"><span class="code">' + c.code + "</span>（" + rKindName(c.kind) + "）</div>" +
+      '<div class="detail">' +
+        "<div>输入：" + pFtoStr(pf) + " = " + all.p + " = " + all.n + " = " + all.u + "</div>" +
+        "<div>" + c.code + " = " + pFtoStr(c.pf) + "</div>" +
+      "</div>" + roundNote;
+    show(el, true, html);
+  }
+
+  function rKindName(kind) {
+    return kind === "R码" ? "R 码" : "三位码";
+  }
+
+  /* ---------- 速查表 ---------- */
+  function buildTable() {
+    let mant = [1.0, 1.2, 1.5, 1.8, 2.2, 2.7, 3.3, 3.9, 4.7, 5.6, 6.8, 8.2];
+    let rows = [];
+    for (let exp = 1; exp <= 7; exp++) {
+      for (let m of mant) {
+        let pf = m * Math.pow(10, exp);
+        let c = codeFromPf(pf);
+        rows.push({ pf: pf, code: c.code, name: pFtoStr(pf) });
+      }
+    }
+    rows.sort(function(a, b) { return a.pf - b.pf; });
+    let body = document.getElementById("tblBody");
+    body.innerHTML = "";
+    for (let r of rows) {
+      let all = pFtoAll(r.pf);
+      let tr = document.createElement("tr");
+      tr.innerHTML =
+        "<td>" + r.name + "</td>" +
+        "<td><code>" + r.code + "</code></td>" +
+        "<td>" + all.p.replace(/\s*pF$/, "") + "</td>" +
+        "<td>" + all.n.replace(/\s*nF$/, "") + "</td>" +
+        "<td>" + all.u.replace(/\s*µF$/, "") + "</td>";
+      body.appendChild(tr);
+    }
+  }
+
+  document.getElementById("codeInput").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") convertCode();
+  });
+  document.getElementById("valInput").addEventListener("keydown", function(e) {
+    if (e.key === "Enter") convertValue();
+  });
+  document.getElementById("tblFilter").addEventListener("input", function() {
+    let q = this.value.trim().toLowerCase();
+    let rows = document.querySelectorAll("#tblBody tr");
+    for (let tr of rows) {
+      let txt = tr.textContent.toLowerCase();
+      tr.style.display = (!q || txt.indexOf(q) >= 0) ? "" : "none";
+    }
+  });
+
+  buildTable();
+  convertCode();
+  convertValue();
+</script>
+</body>
+</html>
