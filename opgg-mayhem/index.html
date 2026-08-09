@@ -1,0 +1,459 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ARAM: Mayhem 出装助手</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --border:#e2e6ec; --text:#1b2430;
+  --muted:#697386; --accent:#2563eb; --accent-soft:#e8efff;
+  --good:#16a34a; --bad:#dc2626; --chip:#eef1f5;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1217; --card:#171c24; --border:#2a323e; --text:#e6e9ef;
+    --muted:#9aa5b5; --accent:#3b82f6; --accent-soft:#1c2b45;
+    --good:#4ade80; --bad:#f87171; --chip:#202833;
+  }
+}
+*{box-sizing:border-box}
+body{
+  margin:0; min-height:100vh; background:var(--bg); color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;
+  display:flex; flex-direction:column; align-items:center; padding:28px 16px 48px;
+}
+.wrap{width:100%; max-width:1000px}
+header{text-align:center; margin-bottom:20px}
+h1{font-size:24px; margin:0 0 6px}
+.sub{color:var(--muted); font-size:13px; margin:0 0 18px}
+.badge{
+  display:inline-block; font-size:12px; padding:3px 10px; border-radius:999px;
+  background:var(--accent-soft); color:var(--accent); border:1px solid var(--accent);
+  margin:0 4px;
+}
+.picker{position:relative; max-width:560px; margin:0 auto 22px}
+.picker input{
+  width:100%; padding:11px 14px; font-size:15px; border-radius:12px;
+  border:1px solid var(--border); background:var(--card); color:var(--text);
+  outline:none; transition:border-color .15s;
+}
+.picker input:focus{border-color:var(--accent)}
+.picker-list{
+  position:absolute; top:calc(100% + 6px); left:0; right:0; z-index:30;
+  background:var(--card); border:1px solid var(--border); border-radius:12px;
+  box-shadow:0 12px 30px rgba(0,0,0,.18); max-height:340px; overflow:auto; display:none;
+}
+.picker-list.show{display:block}
+.p-item{
+  display:flex; align-items:center; gap:10px; padding:8px 12px; cursor:pointer;
+  border-bottom:1px solid var(--border);
+}
+.p-item:last-child{border-bottom:0}
+.p-item:hover,.p-item.sel{background:var(--accent-soft)}
+.p-item img{width:34px; height:34px; border-radius:8px; background:var(--chip)}
+.p-item .p-name{font-size:14px; font-weight:600}
+.p-item .p-key{font-size:12px; color:var(--muted)}
+.tabs{display:flex; gap:6px; justify-content:center; margin:0 0 18px; flex-wrap:wrap}
+.tab{
+  border:1px solid var(--border); background:var(--card); color:var(--text);
+  padding:8px 18px; border-radius:999px; font-size:14px; cursor:pointer;
+  transition:all .15s;
+}
+.tab:hover{border-color:var(--accent)}
+.tab.active{background:var(--accent); border-color:var(--accent); color:#fff}
+.tab .n{opacity:.75; font-size:12px; margin-left:4px}
+.card{background:var(--card); border:1px solid var(--border); border-radius:14px; padding:16px; margin-bottom:16px}
+.card h2{font-size:16px; margin:0 0 12px}
+.card h2 small{font-weight:400; color:var(--muted); font-size:12px; margin-left:8px}
+.muted{color:var(--muted)}
+.row{display:flex; align-items:center; gap:8px; flex-wrap:wrap}
+.stat{font-size:12px; color:var(--muted)}
+.stat b{color:var(--text); font-weight:600}
+.win{color:var(--good); font-weight:600}
+.items-row{display:flex; align-items:center; flex-wrap:wrap; gap:2px}
+.item-icon{
+  position:relative; width:40px; height:40px; border-radius:8px; overflow:visible;
+  border:1px solid var(--border); background:var(--chip); flex:none;
+}
+.item-icon img{width:100%; height:100%; display:block; border-radius:7px}
+.item-icon .cnt{
+  position:absolute; right:-5px; top:-5px; background:var(--accent); color:#fff;
+  font-size:11px; min-width:16px; height:16px; line-height:16px; text-align:center;
+  border-radius:999px; padding:0 3px; font-weight:700;
+}
+.arrow{color:var(--muted); font-size:13px}
+.build-card{border:1px solid var(--border); border-radius:12px; padding:10px 12px; margin-bottom:10px; background:var(--bg)}
+.build-card .stats{margin-top:6px}
+.rune-style{display:flex; align-items:center; gap:8px; margin-bottom:8px}
+.rune-style img{width:30px; height:30px; border-radius:8px; background:var(--chip)}
+.rune-style .tag{font-size:12px; color:var(--muted)}
+.rune-row{display:flex; align-items:center; gap:2px; flex-wrap:wrap; margin-bottom:8px}
+.rune-icon{width:36px; height:36px; border-radius:8px; background:var(--chip); border:1px solid var(--border); overflow:hidden}
+.rune-icon img{width:100%; height:100%; display:block}
+.skill-order{display:flex; flex-wrap:wrap; gap:5px; margin:10px 0}
+.skill-slot{
+  width:34px; height:34px; border-radius:8px; border:1px solid var(--border);
+  background:var(--chip); display:flex; flex-direction:column; align-items:center; justify-content:center;
+  font-size:13px; font-weight:700;
+}
+.skill-slot .lv{font-size:9px; color:var(--muted); font-weight:400}
+.skill-slot.Q{color:#2563eb}.skill-slot.W{color:#16a34a}.skill-slot.E{color:#ca8a04}.skill-slot.R{color:#dc2626}
+.skill-info{display:flex; align-items:center; gap:10px; margin:8px 0}
+.skill-info img{width:40px; height:40px; border-radius:8px; background:var(--chip)}
+.aug-grid{display:grid; grid-template-columns:repeat(auto-fill,minmax(300px,1fr)); gap:12px}
+.aug{
+  border:1px solid var(--border); border-radius:12px; padding:12px; background:var(--bg);
+  display:flex; gap:10px;
+}
+.aug img{width:48px; height:48px; border-radius:10px; background:var(--chip); flex:none}
+.aug .a-name{font-weight:600; font-size:14px}
+.aug .a-desc{font-size:12px; color:var(--muted); line-height:1.55; margin-top:4px}
+.aug .a-stat{font-size:12px; margin-top:6px; display:flex; gap:12px; flex-wrap:wrap}
+.tier-badge{
+  display:inline-block; font-size:11px; padding:1px 8px; border-radius:999px; font-weight:700;
+  margin-left:6px; vertical-align:1px;
+}
+.t0{background:#f3e8ff;color:#7c3aed}.t1{background:#ede9fe;color:#6d28d9}.t2{background:#e0e7ff;color:#4338ca}
+.t3{background:#fef3c7;color:#b45309}.t4{background:#fee2e2;color:#b91c1c}.t5{background:#dcfce7;color:#15803d}
+.t6{background:#e2e8f0;color:#334155}.t7{background:#fce7f3;color:#be185d}.t8{background:#ffedd5;color:#c2410c}
+table{width:100%; border-collapse:collapse; font-size:13px}
+th,td{padding:7px 8px; text-align:left; border-bottom:1px solid var(--border); vertical-align:middle}
+th{color:var(--muted); font-weight:500; font-size:12px; white-space:nowrap}
+td.r,th.r{text-align:right}
+.item-cell{display:flex; align-items:center; gap:8px}
+.item-cell img{width:28px; height:28px; border-radius:6px; background:var(--chip)}
+.num{font-variant-numeric:tabular-nums}
+.toolbar{display:flex; justify-content:center; align-items:center; gap:10px; margin-bottom:16px; flex-wrap:wrap}
+.btn{
+  border:1px solid var(--border); background:var(--card); color:var(--text);
+  padding:7px 14px; border-radius:999px; font-size:13px; cursor:pointer;
+}
+.btn:hover{border-color:var(--accent); color:var(--accent)}
+.btn:disabled{opacity:.5; cursor:default}
+#champHead{display:flex; align-items:center; gap:12px; justify-content:center; margin-bottom:14px}
+#champHead img{width:56px; height:56px; border-radius:14px; background:var(--chip)}
+#champHead .cname{font-size:20px; font-weight:700}
+#champHead .ckey{font-size:12px; color:var(--muted)}
+#status{text-align:center; color:var(--muted); font-size:13px; margin:24px 0}
+.spin{
+  display:inline-block; width:18px; height:18px; border:2px solid var(--border);
+  border-top-color:var(--accent); border-radius:50%; animation:sp 0.8s linear infinite;
+  vertical-align:-4px; margin-right:6px;
+}
+@keyframes sp{to{transform:rotate(360deg)}}
+.err{color:var(--bad); background:var(--card); border:1px solid var(--bad); border-radius:10px; padding:12px; text-align:center}
+.hidden{display:none!important}
+footer{color:var(--muted); font-size:12px; margin-top:28px; text-align:center; line-height:1.7}
+a{color:var(--accent)}
+@media (max-width:640px){
+  .aug-grid{grid-template-columns:1fr}
+  .wrap{max-width:100%}
+}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>ARAM: Mayhem 出装助手</h1>
+    <p class="sub">数据实时抓取自 <a href="https://op.gg/zh-cn/lol/modes/aram-mayhem" target="_blank" rel="noopener">OP.GG</a>，包含出装 / 符文 / 技能 / 强化符文</p>
+  </header>
+
+  <div class="picker">
+    <input id="champInput" type="text" placeholder="搜索英雄，例如：暗夜猎手 / vayne / 薇恩..." autocomplete="off" spellcheck="false">
+    <div id="champList" class="picker-list"></div>
+  </div>
+
+  <div id="champHead" class="hidden"></div>
+
+  <div class="tabs hidden" id="tabs">
+    <button class="tab active" data-tab="items">出装</button>
+    <button class="tab" data-tab="runes">符文</button>
+    <button class="tab" data-tab="skills">技能</button>
+    <button class="tab" data-tab="augments">强化符文</button>
+  </div>
+
+  <div class="toolbar hidden" id="toolbar">
+    <button class="btn" id="refreshBtn">↻ 重新抓取</button>
+    <span class="muted" id="metaInfo"></span>
+  </div>
+
+  <div id="content"></div>
+  <div id="status"></div>
+
+  <footer>
+    数据来源：OP.GG（ARAM: Mayhem 模式）· 本地模式抓取并缓存 30 分钟，GitHub Pages 模式每周一自动更新<br>
+    仅供个人学习参考，请勿用于商业用途
+  </footer>
+</div>
+
+<script>
+"use strict";
+const $ = (s) => document.querySelector(s);
+const state = { champions: [], current: null, data: null, tab: "items", loading: false, staticMode: false };
+const API = location.protocol === "file:" ? "http://localhost:8765" : "";
+
+/* ---------- 工具函数 ---------- */
+function esc(s){
+  return String(s == null ? "" : s).replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function fmtPct(x){ return (x == null || isNaN(x)) ? "—" : Number(x).toFixed(1) + "%"; }
+function fmtNum(x){ return (x == null || isNaN(x)) ? "—" : Number(x).toLocaleString("zh-CN"); }
+function itemImg(it, size){
+  const t = esc(it && it.name ? it.name : "未知装备");
+  const cnt = it && it.count > 1 ? `<span class="cnt">×${it.count}</span>` : "";
+  const src = it && it.img ? esc(it.img) : "";
+  return `<span class="item-icon" title="${t}">${src ? `<img src="${src}" alt="${t}" loading="lazy">` : t}${cnt}</span>`;
+}
+function itemRow(it){
+  return `<span class="item-cell" title="${esc(it && it.name || "")}">${itemImg(it)}<span>${esc(it && it.name || "")}</span></span>`;
+}
+function statRow(p){
+  return `<div class="stats row">
+    <span class="stat">胜率 <b class="win">${fmtPct(p.win_rate)}</b></span>
+    <span class="stat">选用率 <b>${fmtPct(p.pick_rate)}</b></span>
+    <span class="stat">场次 <b>${fmtNum(p.play)}</b></span>
+  </div>`;
+}
+function stripTags(s){
+  return String(s || "").replace(/<br\s*\/?>/gi, "\n").replace(/<[^>]+>/g, "").replace(/\s+/g, " ").trim();
+}
+function setStatus(html){ $("#status").innerHTML = html; }
+
+/* ---------- 英雄选择 ---------- */
+function renderChampList(filter){
+  const list = $("#champList");
+  const kw = (filter || "").trim().toLowerCase();
+  const items = state.champions.filter(c =>
+    !kw || c.name.toLowerCase().includes(kw) || c.key.toLowerCase().includes(kw) || String(c.id).includes(kw)
+  ).slice(0, 60);
+  list.innerHTML = items.map(c => `
+    <div class="p-item" data-key="${esc(c.key)}">
+      <img src="${esc(c.img)}" alt="" loading="lazy">
+      <div><div class="p-name">${esc(c.name)}</div><div class="p-key">${esc(c.key)}</div></div>
+    </div>`).join("");
+  list.classList.toggle("show", true);
+}
+$("#champInput").addEventListener("input", e => renderChampList(e.target.value));
+$("#champInput").addEventListener("focus", e => { if(state.champions.length) renderChampList(e.target.value); });
+document.addEventListener("click", e => {
+  const p = e.target.closest(".p-item");
+  if(p){ loadChampion(p.dataset.key); $("#champInput").blur(); return; }
+  if(!e.target.closest(".picker")) $("#champList").classList.remove("show");
+});
+$("#champInput").addEventListener("keydown", e => {
+  if(e.key === "Enter"){
+    const first = $("#champList .p-item");
+    if(first) loadChampion(first.dataset.key);
+  }
+  if(e.key === "Escape") $("#champList").classList.remove("show");
+});
+
+/* ---------- 数据加载 ---------- */
+async function getJSON(url){
+  const r = await fetch(url);
+  const j = await r.json();
+  if(j && typeof j === "object" && "ok" in j){
+    if(!j.ok) throw new Error(j.error || "请求失败");
+    return j.data;
+  }
+  return j; // 静态 JSON 文件（裸数据）
+}
+async function loadChampion(key, refresh){
+  if(state.loading) return;
+  state.current = key;
+  state.loading = true;
+  $("#tabs").classList.remove("hidden");
+  $("#toolbar").classList.remove("hidden");
+  $("#champList").classList.remove("show");
+  $("#champInput").value = "";
+  $("#refreshBtn").style.display = state.staticMode ? "none" : "";
+  setStatus(state.staticMode
+    ? `<span class="spin"></span>正在加载 ${esc(key)} 的静态数据…`
+    : `<span class="spin"></span>正在抓取 ${esc(key)} 的 ARAM Mayhem 数据…（需抓取 4 个页面，约 5~15 秒）`);
+  $("#content").innerHTML = "";
+  try{
+    state.data = await getJSON(
+      state.staticMode
+        ? API + "/data/" + encodeURIComponent(key) + ".json"
+        : API + "/api/champion/" + encodeURIComponent(key) + (refresh ? "?refresh=1" : "")
+    );
+    state.tab = "items";
+    render();
+    setStatus("");
+  }catch(err){
+    setStatus(`<div class="err">抓取失败：${esc(err.message)}<br><button class="btn" style="margin-top:10px" onclick="loadChampion('${esc(key)}')">重试</button></div>`);
+  }
+  state.loading = false;
+}
+$("#refreshBtn").addEventListener("click", () => {
+  if(state.current) loadChampion(state.current, true);
+});
+
+/* ---------- 渲染 ---------- */
+function render(){
+  const d = state.data;
+  const c = d.champion || {};
+  const head = $("#champHead");
+  head.classList.remove("hidden");
+  head.innerHTML = `
+    ${c.img ? `<img src="${esc(c.img)}" alt="">` : ""}
+    <div>
+      <div class="cname">${esc(c.name || state.current)} <span class="badge">ARAM: Mayhem</span></div>
+      <div class="ckey">${esc(c.key || "")} ${d.patch ? "· 版本 " + esc(d.patch) : ""}</div>
+    </div>`;
+  $("#metaInfo").textContent = state.staticMode
+    ? (d.patch ? "版本 " + d.patch + " · 每周自动更新" : "每周自动更新")
+    : (d.patch ? "版本 " + d.patch + " · 缓存 30 分钟" : "");
+  document.querySelectorAll(".tabs > .tab[data-tab]").forEach(t => t.classList.toggle("active", t.dataset.tab === state.tab));
+  renderTab();
+}
+document.querySelectorAll(".tabs > .tab[data-tab]").forEach(t => t.addEventListener("click", () => {
+  state.tab = t.dataset.tab; render();
+}));
+
+function renderTab(){
+  const d = state.data || {};
+  const el = $("#content");
+  if(state.tab === "items") el.innerHTML = renderItems(d.items || {});
+  else if(state.tab === "runes") el.innerHTML = renderRunes(d.runes || {});
+  else if(state.tab === "skills") el.innerHTML = renderSkills(d.skills || {});
+  else el.innerHTML = renderAugments(d.augments || {});
+}
+
+/* ---------- 出装 ---------- */
+function renderItems(it){
+  const core = it["核心装备"] || [], boots = it["鞋子"] || [], starters = it["出门装"] || [], stats = it["装备"] || [];
+  const coreHtml = core.slice(0, 8).map(b => `
+    <div class="build-card">
+      <div class="items-row">${b.items.map(x => itemImg(x)).join("")}</div>
+      ${statRow(b)}
+    </div>`).join("");
+  const bootsHtml = boots.map(b => `
+    <div class="build-card">
+      <div class="row">${b.items.map(x => itemImg(x)).join("")} <span style="font-size:13px">${b.items.map(x => esc(x.name)).join(" / ")}</span></div>
+      ${statRow(b)}
+    </div>`).join("");
+  const starterHtml = starters.slice(0, 8).map(b => `
+    <div class="build-card">
+      <div class="items-row">${b.items.map(x => itemImg(x)).join("")}</div>
+      ${statRow(b)}
+    </div>`).join("");
+  const statsHtml = stats.map(b => `
+    <tr>
+      <td>${itemRow(b.items && b.items[0])}</td>
+      <td class="r num">${fmtPct(b.pick_rate)}</td>
+      <td class="r num"><span class="win">${fmtPct(b.win_rate)}</span></td>
+      <td class="r num">${fmtNum(b.play)}</td>
+    </tr>`).join("");
+  return `
+    ${core.length ? `<div class="card"><h2>核心装备 <small>推荐出装顺序 · 前 ${Math.min(8, core.length)} 套</small></h2>${coreHtml}</div>` : ""}
+    ${boots.length ? `<div class="card"><h2>鞋子</h2>${bootsHtml}</div>` : ""}
+    ${starters.length ? `<div class="card"><h2>出门装</h2>${starterHtml}</div>` : ""}
+    ${stats.length ? `<div class="card"><h2>装备统计 <small>按选用率排序</small></h2>
+      <table><thead><tr><th>装备</th><th class="r">选用率</th><th class="r">胜率</th><th class="r">场次</th></tr></thead>
+      <tbody>${statsHtml}</tbody></table></div>` : ""}
+    ${!(core.length||boots.length||starters.length||stats.length) ? `<div class="card muted">暂无出装数据</div>` : ""}`;
+}
+
+/* ---------- 符文 ---------- */
+function renderRunes(r){
+  const pages = r.pages || [];
+  const html = pages.map(p => `
+    <div class="build-card">
+      <div class="rune-style">
+        <img src="${esc(p.primary.img)}" alt="" title="${esc(p.primary.name)}">
+        <div><div style="font-weight:600">${esc(p.primary.name)}</div><div class="tag">主系</div></div>
+        <span class="arrow">→</span>
+        <img src="${esc(p.secondary.img)}" alt="" title="${esc(p.secondary.name)}">
+        <div><div style="font-weight:600">${esc(p.secondary.name)}</div><div class="tag">副系</div></div>
+      </div>
+      <div class="rune-row" title="${esc(p.runes.map(x=>x.name).join(" / "))}">
+        ${p.runes.map(x => `<span class="rune-icon"><img src="${esc(x.img)}" alt="" loading="lazy"></span>`).join("")}
+      </div>
+      ${p.shards.length ? `<div class="rune-row" title="${esc(p.shards.map(x=>x.name).join(" / "))}">
+        <span class="tag" style="font-size:12px;color:var(--muted);margin-right:4px">碎片</span>
+        ${p.shards.map(x => `<span class="rune-icon"><img src="${esc(x.img)}" alt="" loading="lazy"></span>`).join("")}
+      </div>` : ""}
+      ${statRow(p)}
+    </div>`).join("");
+  return `<div class="card"><h2>符文推荐 <small>${pages.length} 套常用符文</small></h2>${html || '<div class="muted">暂无符文数据</div>'}</div>`;
+}
+
+/* ---------- 技能 ---------- */
+function renderSkills(s){
+  const masteries = s.masteries || [];
+  const html = masteries.map(m => `
+    <div class="build-card">
+      <div class="row" style="margin-bottom:4px">
+        ${m.skills.map(k => `<div class="skill-info" style="margin:0 10px 0 0">
+          ${k.img ? `<img src="${esc(k.img)}" alt="" title="${esc(k.name)}">` : `<span class="skill-slot ${esc(k.key)}">${esc(k.key)}</span>`}
+          <div><div style="font-size:13px;font-weight:600">${esc(k.name)}</div><div class="tag" style="font-size:11px;color:var(--muted)">${esc(k.key)}</div></div>
+        </div>`).join("")}
+      </div>
+      <div class="skill-order">
+        ${m.order.map((k, i) => `<span class="skill-slot ${esc(k)}" title="第 ${i+1} 级 点 ${esc(k)}">${esc(k)}<span class="lv">${i+1}</span></span>`).join("")}
+      </div>
+      ${statRow(m)}
+    </div>`).join("");
+  return `<div class="card"><h2>技能加点 <small>数字为升级顺序</small></h2>${html || '<div class="muted">暂无技能数据</div>'}</div>`;
+}
+
+/* ---------- 强化符文 ---------- */
+function renderAugments(a){
+  const list = a.augments || [];
+  if(!list.length) return `<div class="card muted">暂无强化符文数据</div>`;
+  const tiers = [...new Set(list.map(x => x.tier))].sort((p,q)=>q-p);
+  const chips = `<button class="tab active" data-t="all">全部 <span class="n">${list.length}</span></button>` +
+    tiers.map(t => `<button class="tab" data-t="${t}">T${t} <span class="n">${list.filter(x=>x.tier===t).length}</span></button>`).join("");
+  return `
+    <div class="tabs" style="margin-bottom:14px" id="augChips">${chips}</div>
+    <div class="aug-grid" id="augGrid">${list.map(augCard).join("")}</div>`;
+}
+function augCard(x){
+  const tierCls = "t" + (x.tier % 9);
+  return `
+    <div class="aug" data-t="${x.tier}">
+      ${x.icon ? `<img src="${esc(x.icon)}" alt="" loading="lazy">` : `<div style="width:48px;height:48px;border-radius:10px;background:var(--chip);flex:none"></div>`}
+      <div style="min-width:0">
+        <div class="a-name">${esc(x.name || "未知强化")} <span class="tier-badge ${tierCls}">T${x.tier}</span></div>
+        ${x.desc ? `<div class="a-desc">${esc(stripTags(x.desc))}</div>` : ""}
+        <div class="a-stat">
+          <span>强度 <b>${fmtPct(x.performance)}</b></span>
+          <span>热度 <b>${fmtPct(x.popular)}</b></span>
+        </div>
+      </div>
+    </div>`;
+}
+document.addEventListener("click", e => {
+  const chip = e.target.closest("#augChips .tab");
+  if(!chip) return;
+  document.querySelectorAll("#augChips .tab").forEach(t => t.classList.remove("active"));
+  chip.classList.add("active");
+  const t = chip.dataset.t;
+  document.querySelectorAll("#augGrid .aug").forEach(el => {
+    el.classList.toggle("hidden", t !== "all" && el.dataset.t !== t);
+  });
+});
+
+/* ---------- 初始化 ---------- */
+(async function init(){
+  try{
+    try{
+      state.champions = await getJSON(API + "/api/champions");
+    }catch(e){
+      state.staticMode = true;
+      state.champions = await getJSON(API + "/data/champions.json");
+    }
+    if(!state.champions.length) throw new Error("英雄列表为空");
+    $("#champInput").placeholder = "已加载英雄，输入名称搜索…";
+    setStatus(`<span class="spin"></span>已加载 ${state.champions.length} 位英雄，正在打开示例：暗夜猎手…`);
+    const startChamp = (location.hash || "#vayne").slice(1);
+    loadChampion(startChamp);
+  }catch(err){
+    setStatus(`<div class="err">初始化失败：${esc(err.message)}<br>请确认本地服务器已启动（opgg_mayhem_server.py）</div>`);
+  }
+})();
+</script>
+</body>
+</html>
