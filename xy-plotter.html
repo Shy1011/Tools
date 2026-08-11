@@ -82,6 +82,8 @@ input:focus, select:focus, textarea:focus{
 .curve-head .curve-name{flex:1; min-width:80px; font-size:12px}
 .curve-head input[type=color]{width:30px; height:22px; padding:1px; border-radius:5px; cursor:pointer}
 .curve-sec textarea{min-height:64px; font-size:11px}
+.curve-wlabel{flex:none; width:58px; gap:2px}
+.curve-wlabel input{width:100%; padding:2px 5px}
 .btn-sm{
   font-family:inherit; font-size:11px; padding:3px 8px; border-radius:5px;
   border:1px solid var(--border); background:transparent; color:var(--text); cursor:pointer;
@@ -153,6 +155,7 @@ input:focus, select:focus, textarea:focus{
           <div class="info-line" id="info">尚未绘图</div>
           <div class="info-line" id="selInfo">点击数据点可添加标记</div>
           <div class="row"><button id="clearSelBtn" class="btn-sm" type="button">清除全部标记</button></div>
+          <div class="row"><label class="chk"><input id="markerArrowChk" type="checkbox" checked> 标记指引箭头</label></div>
         </div>
       </details>
 
@@ -204,6 +207,8 @@ input:focus, select:focus, textarea:focus{
             · 鼠标悬停数据点显示精确坐标<br>
             · 单击数据点可添加/取消标记,支持同时标记多个点<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
+            · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
+            · 每条曲线可设置线条粗细(线宽)<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
             · Log 坐标会自动跳过 0 和负数
@@ -235,6 +240,7 @@ let curveSeq = 0;
 const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0ea5e9', '#db2777', '#65a30d'];
 const curvesBox = $('curvesBox');
 let legendItems = [];     // [{x,y,w,h,ci}]
+let markerRects = [];     // [{x,y,w,h,si}] 标记点标签区域
 const labelPos = {
   title: { x: 0.5, y: 8 },
   xAxis: { t: 0.5, d: 40 },
@@ -246,7 +252,7 @@ const view = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, autoX: true, autoY: true };
 let theme = 'light';
 let panMode = false, spaceDown = false;
 let hover = null;
-let selected = [];        // [{ci, xi}] 多个选中的点
+let selected = [];        // [{ci, xi, dx?, dy?}] 多个选中的点;dx/dy 为标签相对点位的偏移(拖动后生效)
 let zoomRect = null;
 let drag = null;
 let redrawPending = false;
@@ -324,7 +330,8 @@ function readConfig() {
     tickStep: num($('tickStep'), 1),
     customTicks: $('customTicks').value,
     grid: $('gridChk').checked,
-    smooth: $('smoothSel').value === 'smooth'
+    smooth: $('smoothSel').value === 'smooth',
+    markerArrow: $('markerArrowChk').checked
   };
 }
 
@@ -672,7 +679,7 @@ function draw(ctx) {
     if (pts.length < 2) continue;
     drawnAny = true;
     ctx.strokeStyle = c.color;
-    ctx.lineWidth = 2;
+    ctx.lineWidth = Math.max(1, parseFloat(c.width) || 2);
     ctx.lineJoin = 'round';
     if (cfg.smooth && isSorted(c.xs)) drawSmooth(ctx, pts);
     else {
@@ -744,8 +751,11 @@ function draw(ctx) {
     }
   }
 
-  // 选中的点:固定高亮并显示坐标
-  for (const s of selected) {
+  // 选中的点:高亮;标签可拖动,拖离点位后显示指引箭头
+  markerRects = [];
+  const markerArrowOn = cfg.markerArrow;
+  for (let si = 0; si < selected.length; si++) {
+    const s = selected[si];
     const c = curves[s.ci];
     if (c && c.visible && s.xi < c.xs.length) {
       const x = c.xs[s.xi], y = c.ys[s.xi];
@@ -757,11 +767,41 @@ function draw(ctx) {
         ctx.strokeStyle = c.color;
         ctx.lineWidth = 2.5;
         ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.stroke();
+
+        const moved = s.dx !== undefined && s.dy !== undefined;
+        const ax = px + (moved ? s.dx : 11);
+        const ay = py + (moved ? s.dy : -10);
+        const text = c.name + ' (' + fmt(x) + ', ' + fmt(y) + ')';
         ctx.fillStyle = T.text;
         ctx.font = '11px ' + MONO;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
-        ctx.fillText(c.name + ' (' + fmt(x) + ', ' + fmt(y) + ')', px + 11, py - 10);
+        ctx.fillText(text, ax, ay);
+        const tw = ctx.measureText(text).width;
+        const rx = ax - 4, ry = ay - 12, rw = tw + 8, rh = 16;
+        markerRects.push({ x: rx, y: ry, w: rw, h: rh, si });
+
+        if (moved && markerArrowOn) {
+          const cx = rx + rw / 2, cy = ry + rh / 2;
+          const ddx = px - cx, ddy = py - cy;
+          const dlen = Math.hypot(ddx, ddy) || 1;
+          const ux = ddx / dlen, uy = ddy / dlen;
+          const t = Math.min(rw / 2 / Math.max(Math.abs(ux), 1e-6), rh / 2 / Math.max(Math.abs(uy), 1e-6));
+          const ex = cx + ux * t, ey = cy + uy * t;
+          const bx = ex + ux * 8, by = ey + uy * 8;
+          const ox = -uy * 4.5, oy = ux * 4.5;
+          ctx.strokeStyle = c.color;
+          ctx.fillStyle = c.color;
+          ctx.globalAlpha = 0.75;
+          ctx.lineWidth = 1.2;
+          ctx.beginPath(); ctx.moveTo(px, py); ctx.lineTo(ex, ey); ctx.stroke();
+          ctx.beginPath();
+          ctx.moveTo(ex, ey);
+          ctx.lineTo(bx + ox, by + oy);
+          ctx.lineTo(bx - ox, by - oy);
+          ctx.closePath(); ctx.fill();
+          ctx.globalAlpha = 1;
+        }
       }
     }
   }
@@ -806,6 +846,11 @@ function updateLabelDrag(p) {
   } else if (drag.kind === 'yAxis') {
     labelPos.yAxis.t = Math.min(1, Math.max(0, (p.y - rect.T) / rect.H));
     labelPos.yAxis.d = p.x;
+  } else if (drag.kind === 'marker') {
+    const s = selected[drag.si];
+    if (!s) return;
+    s.dx = p.x - drag.px;
+    s.dy = p.y - drag.py;
   }
   redraw();
 }
@@ -839,7 +884,7 @@ function findNearest(px, py) {
 canvas.addEventListener('mousemove', (e) => {
   const p = canvasPos(e);
   if (drag) {
-    if (drag.mode === 'label') { updateLabelDrag(p); }
+    if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else panView(p.x - drag.sx, p.y - drag.sy);
     return;
@@ -887,6 +932,23 @@ canvas.addEventListener('mousedown', (e) => {
       return;
     }
   }
+  for (const it of markerRects) {
+    if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) {
+      const s = selected[it.si];
+      if (!s) return;
+      const c = curves[s.ci];
+      if (!c || !c.visible || s.xi >= c.xs.length) return;
+      const cfg0 = readConfig();
+      const r0 = getPlotRect(cfg0);
+      drag = {
+        mode: 'markerLabel', kind: 'marker', si: it.si, sx: p.x, sy: p.y,
+        px: sX(c.xs[s.xi], cfg0.xScale, r0.L, r0.W),
+        py: sY(c.ys[s.xi], cfg0.yScale, r0.B, r0.H)
+      };
+      canvas.style.cursor = 'move';
+      return;
+    }
+  }
   for (const k of ['title', 'xAxis', 'yAxis']) {
     const r = labelRects[k];
     if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
@@ -903,7 +965,7 @@ window.addEventListener('mousemove', (e) => {
   if (drag && e.target !== canvas) {
     const r = canvas.getBoundingClientRect();
     const p = { x: e.clientX - r.left, y: e.clientY - r.top };
-    if (drag.mode === 'label') { updateLabelDrag(p); }
+    if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else panView(p.x - drag.sx, p.y - drag.sy);
   }
@@ -918,6 +980,7 @@ function selectPointAt(px, py) {
   }
   updateSelInfo();
   redraw();
+  scheduleSave();
 }
 
 function updateSelInfo() {
@@ -941,7 +1004,7 @@ function updateSelInfo() {
 
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
-  if (drag.mode === 'label') {
+  if (drag.mode === 'label' || drag.mode === 'markerLabel') {
     saveState();
   } else if (drag.mode === 'zoom') {
     const w = zoomRect ? Math.abs(zoomRect.x2 - zoomRect.x1) : 0;
@@ -989,6 +1052,7 @@ $('clearSelBtn').addEventListener('click', () => {
   selected = [];
   updateSelInfo();
   redraw();
+  scheduleSave();
 });
 $('exampleBtn').addEventListener('click', () => {
   if (!curves.length) addCurve();
@@ -1060,7 +1124,7 @@ for (const id of ['titleInput', 'titleSize', 'titleColor', 'titleTheme',
   'xLabelInput', 'yLabelInput', 'axisFontSel',
   'xLabelSize', 'xLabelColor', 'xLabelTheme', 'yLabelSize', 'yLabelColor', 'yLabelTheme',
   'xScaleSel', 'yScaleSel', 'tickInput', 'tickModeSel', 'tickStep', 'customTicks',
-  'gridChk', 'smoothSel']) {
+  'gridChk', 'smoothSel', 'markerArrowChk']) {
   const el = $(id);
   el.addEventListener('input', redraw);
   el.addEventListener('change', redraw);
@@ -1091,21 +1155,30 @@ function addCurve(name) {
     '<div class="curve-head">' +
     '<input class="curve-name" type="text" value="' + esc(displayName) + '" placeholder="曲线名称">' +
     '<input class="curve-color" type="color" value="' + color + '">' +
+    '<label class="f curve-wlabel" title="线条粗细"><input class="curve-width num" type="number" value="2" min="1" max="12" step="0.5"></label>' +
     '<label class="chk" title="显示/隐藏"><input class="curve-vis" type="checkbox" checked> 显示</label>' +
     '<button class="btn-sm" type="button">删除</button>' +
     '</div>' +
     '<label class="f">X 数据 <textarea class="xData" spellcheck="false" placeholder="粘贴 X 值…"></textarea></label>' +
     '<label class="f">Y 数据 <textarea class="yData" spellcheck="false" placeholder="粘贴 Y 值…"></textarea></label>';
   curvesBox.append(sec);
-  const curve = { id: 'c' + curveSeq, name: displayName, color: color, visible: true, xs: [], ys: [] };
+  const curve = { id: 'c' + curveSeq, name: displayName, color: color, visible: true, width: 2, xs: [], ys: [] };
   curves.push(curve);
 
   const nameInput = sec.querySelector('.curve-name');
   const colorInput = sec.querySelector('.curve-color');
   const visInput = sec.querySelector('.curve-vis');
+  const widthInput = sec.querySelector('.curve-width');
   nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); scheduleSave(); });
   colorInput.addEventListener('input', () => { curve.color = colorInput.value; redraw(); scheduleSave(); });
   visInput.addEventListener('change', () => { curve.visible = visInput.checked; redraw(); scheduleSave(); });
+  widthInput.addEventListener('input', () => {
+    let w = parseFloat(widthInput.value);
+    if (!isFinite(w)) w = 2;
+    curve.width = Math.max(1, Math.min(12, w));
+    widthInput.value = curve.width;
+    redraw(); scheduleSave();
+  });
   sec.querySelector('.btn-sm').addEventListener('click', () => {
     const idx = curves.indexOf(curve);
     if (idx >= 0) curves.splice(idx, 1);
@@ -1129,13 +1202,29 @@ $('addCurveBtn').addEventListener('click', () => addCurve());
 function status(msg) { $('status').textContent = msg; }
 function warn(msg) { $('status').textContent = '⚠ ' + msg; }
 
+function csvField(v) {
+  const s = String(v == null ? '' : v);
+  return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
+}
+
 function exportData() {
   const valid = curves.filter((c) => c.xs.length);
   if (!valid.length) { warn('没有可导出的数据'); return; }
-  const rows = ['曲线,x,y'];
+  const rows = [
+    ['标题', $('titleInput').value.trim()],
+    ['X轴', $('xLabelInput').value.trim()],
+    ['Y轴', $('yLabelInput').value.trim()],
+    ['标题字号', $('titleSize').value],
+    ['X轴字号', $('xLabelSize').value],
+    ['Y轴字号', $('yLabelSize').value]
+  ].map((r) => r.map(csvField).join(','));
+  for (const c of valid) rows.push('曲线线宽,' + csvField(c.name) + ',' + (c.width || 2));
+  rows.push('');
+  rows.push('曲线,x,y');
+  let dataCount = 0;
   for (const c of valid) {
-    const name = '"' + c.name.replace(/"/g, '""') + '"';
-    for (let i = 0; i < c.xs.length; i++) rows.push(name + ',' + c.xs[i] + ',' + c.ys[i]);
+    const name = csvField(c.name);
+    for (let i = 0; i < c.xs.length; i++) { rows.push(name + ',' + c.xs[i] + ',' + c.ys[i]); dataCount++; }
   }
   const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -1143,7 +1232,7 @@ function exportData() {
   a.download = '曲线数据.csv';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  status('已导出 ' + valid.length + ' 条曲线,共 ' + (rows.length - 1) + ' 行数据');
+  status('已导出 ' + valid.length + ' 条曲线,共 ' + dataCount + ' 行数据');
 }
 
 function parseCSV(text) {
@@ -1176,12 +1265,25 @@ function parseCSV(text) {
 function loadDataFromFile(file) {
   file.text().then((text) => {
     const rows = parseCSV(text);
-    if (!rows.length || String(rows[0][0]).trim().toLowerCase() !== '曲线') {
-      warn('CSV 格式不正确:第一行应为 曲线,x,y');
+    let dataStart = -1;
+    for (let i = 0; i < rows.length; i++) {
+      if (String(rows[i][0]).trim().toLowerCase() === '曲线' &&
+          String(rows[i][1]).trim().toLowerCase() === 'x') { dataStart = i; break; }
+    }
+    if (dataStart < 0) {
+      warn('CSV 格式不正确:未找到 曲线,x,y 数据表头');
       return;
     }
+    const meta = {}, metaWidths = {};
+    for (let i = 0; i < dataStart; i++) {
+      const r = rows[i];
+      if (!r || !r.length) continue;
+      const key = String(r[0]).trim();
+      if (key === '曲线线宽' && r.length >= 3) metaWidths[String(r[1]).trim()] = parseFloat(r[2]);
+      else if (r.length >= 2) meta[key] = String(r[1]).trim();
+    }
     const groups = {}, order = [];
-    for (let i = 1; i < rows.length; i++) {
+    for (let i = dataStart + 1; i < rows.length; i++) {
       const r = rows[i];
       if (!r || r.length < 3) continue;
       const x = Number(r[1]), y = Number(r[2]);
@@ -1192,6 +1294,18 @@ function loadDataFromFile(file) {
       groups[name].ys.push(y);
     }
     if (!order.length) { warn('文件中没有有效数据行'); return; }
+    const setMeta = (id, key) => {
+      if (meta[key] !== undefined) {
+        const el = $(id);
+        if (el) el.value = meta[key];
+      }
+    };
+    setMeta('titleInput', '标题');
+    setMeta('xLabelInput', 'X轴');
+    setMeta('yLabelInput', 'Y轴');
+    setMeta('titleSize', '标题字号');
+    setMeta('xLabelSize', 'X轴字号');
+    setMeta('yLabelSize', 'Y轴字号');
     while (curves.length) {
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
       if (sec) sec.remove();
@@ -1202,6 +1316,12 @@ function loadDataFromFile(file) {
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
       sec.querySelector('.xData').value = groups[name].xs.join(' ');
       sec.querySelector('.yData').value = groups[name].ys.join(' ');
+      const w = metaWidths[name];
+      if (isFinite(w)) {
+        c.width = Math.max(1, Math.min(12, w));
+        const wi = sec.querySelector('.curve-width');
+        if (wi) wi.value = c.width;
+      }
     }
     plot();
     saveState();
@@ -1226,18 +1346,19 @@ function saveState() {
         yLabelSize: $('yLabelSize').value, yLabelColor: $('yLabelColor').value, yLabelTheme: $('yLabelTheme').checked,
         xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
         ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
-        grid: $('gridChk').checked, smooth: $('smoothSel').value
+        grid: $('gridChk').checked, smooth: $('smoothSel').value, markerArrow: $('markerArrowChk').checked
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
       curves: curves.map((c, i) => {
         const sec = secs[i];
         return {
-          name: c.name, color: c.color, visible: c.visible,
+          name: c.name, color: c.color, visible: c.visible, width: c.width,
           xText: sec ? sec.querySelector('.xData').value : '',
           yText: sec ? sec.querySelector('.yData').value : ''
         };
-      })
+      }),
+      selected: selected.map((s) => ({ ci: s.ci, xi: s.xi, dx: s.dx, dy: s.dy }))
     };
     localStorage.setItem('xy-plotter-state', JSON.stringify(state));
   } catch (e) {
@@ -1259,6 +1380,7 @@ function loadState() {
     set('xScaleSel', s.xScale); set('yScaleSel', s.yScale);
     set('tickInput', s.ticks); set('tickModeSel', s.tickMode); set('tickStep', s.tickStep); set('customTicks', s.customTicks);
     setChk('gridChk', s.grid); set('smoothSel', s.smooth);
+    setChk('markerArrowChk', s.markerArrow);
   }
   if (state && state.labelPos) {
     if (state.labelPos.title) labelPos.title = state.labelPos.title;
@@ -1287,6 +1409,10 @@ function loadState() {
       if (sc.color) { c.color = sc.color; sec.querySelector('.curve-color').value = sc.color; }
       c.visible = sc.visible !== false;
       sec.querySelector('.curve-vis').checked = c.visible;
+      if (isFinite(sc.width)) {
+        c.width = Math.max(1, Math.min(12, sc.width));
+        sec.querySelector('.curve-width').value = c.width;
+      }
       sec.querySelector('.xData').value = sc.xText || '';
       sec.querySelector('.yData').value = sc.yText || '';
       if (sc.yText && sc.yText.trim()) hasData = true;
@@ -1296,6 +1422,13 @@ function loadState() {
   }
   syncTickModeUI();
   if (hasData) plot(); else redraw();
+  if (state && Array.isArray(state.selected)) {
+    selected = state.selected
+      .filter((s) => s && isFinite(s.ci) && isFinite(s.xi) && s.ci >= 0 && s.ci < curves.length && s.xi < curves[s.ci].xs.length)
+      .map((s) => ({ ci: s.ci, xi: s.xi, dx: isFinite(s.dx) ? s.dx : undefined, dy: isFinite(s.dy) ? s.dy : undefined }));
+    updateSelInfo();
+    redraw();
+  }
 }
 
 function resize() {
