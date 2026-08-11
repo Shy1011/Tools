@@ -160,6 +160,22 @@ input:focus, select:focus, textarea:focus{
       </details>
 
       <details class="sec">
+        <summary>按值标记</summary>
+        <div class="sec-body">
+          <label class="f">曲线 <select id="markerCurveSel"></select></label>
+          <div class="row">
+            <label class="f" style="flex:1; min-width:0">X 值 <input id="markerXInput" class="num" type="number" step="any" placeholder="例 2.5"></label>
+            <label class="f" style="flex:1; min-width:0">Y 值 <input id="markerYInput" class="num" type="number" step="any" placeholder="例 0.84"></label>
+          </div>
+          <div class="row">
+            <button id="markerByXBtn" class="btn" type="button">按 X 标记</button>
+            <button id="markerByYBtn" class="btn" type="button">按 Y 标记</button>
+          </div>
+          <div class="hint">在所选曲线上找 X 或 Y 最接近输入值的数据点并添加/取消标记;输入框内按回车也可触发。</div>
+        </div>
+      </details>
+
+      <details class="sec">
         <summary>标题与坐标轴</summary>
         <div class="sec-body">
           <label class="f">标题 <input id="titleInput" type="text" value="曲线图"></label>
@@ -206,6 +222,7 @@ input:focus, select:focus, textarea:focus{
             · 按住空格键拖动画布可平移<br>
             · 鼠标悬停数据点显示精确坐标<br>
             · 单击数据点可添加/取消标记,支持同时标记多个点<br>
+            · 可输入 X / Y 值在指定曲线上精确定位标记点<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
             · 每条曲线可设置线条粗细(线宽)<br>
@@ -1002,6 +1019,53 @@ function updateSelInfo() {
   status('已标记 ' + shown.length + ' 个点');
 }
 
+function refreshMarkerCurveSel() {
+  const sel = $('markerCurveSel');
+  if (!sel) return;
+  const prev = sel.value;
+  sel.innerHTML = '';
+  for (const c of curves) {
+    const opt = document.createElement('option');
+    opt.value = c.id;
+    opt.textContent = c.name;
+    sel.append(opt);
+  }
+  if (prev && curves.some((c) => c.id === prev)) sel.value = prev;
+  else if (sel.options.length) sel.value = sel.options[0].value;
+}
+
+function markByValue(axis) {
+  const sel = $('markerCurveSel');
+  const c = curves.find((cc) => cc.id === sel.value);
+  if (!c) { warn('请先选择曲线'); return; }
+  if (!c.visible) { warn('曲线「' + c.name + '」已隐藏,请先显示'); return; }
+  if (!c.xs.length) { warn('曲线「' + c.name + '」没有数据'); return; }
+  const isX = axis === 'x';
+  const input = $('marker' + (isX ? 'X' : 'Y') + 'Input');
+  const value = parseFloat(input.value);
+  if (!isFinite(value)) { warn('请输入有效的 ' + (isX ? 'X' : 'Y') + ' 值'); return; }
+  const ci = curves.indexOf(c);
+  const cfg = readConfig();
+  const log = isX ? cfg.xScale === 'log' : cfg.yScale === 'log';
+  const arr = isX ? c.xs : c.ys;
+  const other = isX ? c.ys : c.xs;
+  let best = null;
+  for (let i = 0; i < arr.length; i++) {
+    const v = arr[i];
+    if (!isFinite(v) || (log && v <= 0)) continue;
+    const d = Math.abs(v - value);
+    if (!best || d < best.d) best = { d, i, v, other: other[i] };
+  }
+  if (!best) { warn('曲线上没有可用的 ' + (isX ? 'X' : 'Y') + ' 数据'); return; }
+  const idx = selected.findIndex((s) => s.ci === ci && s.xi === best.i);
+  if (idx >= 0) selected.splice(idx, 1);
+  else selected.push({ ci: ci, xi: best.i });
+  updateSelInfo();
+  redraw();
+  scheduleSave();
+  status((isX ? 'X' : 'Y') + '=' + fmt(value) + ' → ' + c.name + ' 点 (' + fmt(best.v) + ', ' + fmt(best.other) + ')');
+}
+
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
   if (drag.mode === 'label' || drag.mode === 'markerLabel') {
@@ -1054,6 +1118,13 @@ $('clearSelBtn').addEventListener('click', () => {
   redraw();
   scheduleSave();
 });
+$('markerByXBtn').addEventListener('click', () => markByValue('x'));
+$('markerByYBtn').addEventListener('click', () => markByValue('y'));
+for (const [btnId, inputId] of [['markerByXBtn', 'markerXInput'], ['markerByYBtn', 'markerYInput']]) {
+  $(inputId).addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') { e.preventDefault(); $(btnId).click(); }
+  });
+}
 $('exampleBtn').addEventListener('click', () => {
   if (!curves.length) addCurve();
   while (curves.length > 1) {
@@ -1169,7 +1240,7 @@ function addCurve(name) {
   const colorInput = sec.querySelector('.curve-color');
   const visInput = sec.querySelector('.curve-vis');
   const widthInput = sec.querySelector('.curve-width');
-  nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); scheduleSave(); });
+  nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); scheduleSave(); refreshMarkerCurveSel(); });
   colorInput.addEventListener('input', () => { curve.color = colorInput.value; redraw(); scheduleSave(); });
   visInput.addEventListener('change', () => { curve.visible = visInput.checked; redraw(); scheduleSave(); });
   widthInput.addEventListener('input', () => {
@@ -1183,6 +1254,7 @@ function addCurve(name) {
     const idx = curves.indexOf(curve);
     if (idx >= 0) curves.splice(idx, 1);
     sec.remove();
+    refreshMarkerCurveSel();
     resetView();
     scheduleSave();
   });
@@ -1193,6 +1265,7 @@ function addCurve(name) {
     ta.addEventListener('paste', () => setTimeout(plot, 60));
     ta.addEventListener('input', scheduleSave);
   }
+  refreshMarkerCurveSel();
   return curve;
 }
 
