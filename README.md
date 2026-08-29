@@ -1,5 +1,7 @@
 # Tools 工具集
 
+[中文](README.md) | [English](README_EN.md)
+
 一个轻量的网页工具集合,全部由纯 HTML + CSS + JavaScript 编写。下载后直接用浏览器打开即可使用,无需安装依赖,大部分工具完全离线可用。
 
 ## 包含工具
@@ -52,6 +54,7 @@
 | `xy-plotter.html` | XY 曲线绘图·简易版 |
 | `xy-plotter-preview.png` | 工具预览截图 |
 | `README.md` | 本说明文件 |
+| `README_EN.md` | English documentation |
 
 ## 技术说明
 
