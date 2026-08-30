@@ -169,6 +169,9 @@ input:focus, select:focus, textarea:focus{
           </div>
           <div class="row">
             <label class="f">窗口大小 <input id="cleanWindowInput" class="num" type="number" value="7" min="3" max="21" step="2"></label>
+            <label class="chk"><input id="fillGapsChk" type="checkbox" checked> 擦除后平滑补线</label>
+          </div>
+          <div class="row">
             <label class="chk"><input id="exportCleanChk" type="checkbox"> 导出处理结果</label>
           </div>
           <div class="row">
@@ -176,7 +179,7 @@ input:focus, select:focus, textarea:focus{
             <button id="cleanRedoBtn" class="btn" type="button">重做</button>
             <button id="cleanRestoreBtn" class="btn" type="button">恢复隐藏点</button>
           </div>
-          <div class="hint">处理只影响显示,原始数据(文本框、导出 CSV)默认保持不变;取消勾选即可随时对比原始曲线。橡皮擦改为「隐藏」数据点(灰色小点标记),可撤销/重做(Ctrl+Z / Ctrl+Y)。勾选「导出处理结果」后,导出的 CSV 才是清理后的数据。</div>
+          <div class="hint">处理只影响显示,原始数据(文本框、默认导出 CSV)保持不变;取消勾选即可对比原始曲线。橡皮擦改为「隐藏」数据点(灰色小点),隐藏段自动用平滑曲线补上(可关闭「擦除后平滑补线」),可撤销/重做。勾选「导出处理结果」后,导出 CSV 与图像完全一致(含补线点)。</div>
         </div>
       </details>
 
@@ -261,7 +264,7 @@ input:focus, select:focus, textarea:focus{
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
             · 每条曲线可设置线条粗细(线宽)<br>
             · 「毛刺清理」为显示层处理:中值滤波去毛刺,可调窗口/叠加滑动平均,不改原始数据<br>
-            · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点(灰色记号),原始数据不变,可撤销/重做<br>
+            · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点(灰色记号),隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
             · Log 坐标会自动跳过 0 和负数<br>
@@ -315,6 +318,7 @@ let eraserMode = false;
 let cleanEnabled = false;
 let cleanWindow = 7;
 let cleanSmooth = false;
+let fillGaps = true;
 let exportClean = false;
 let hiddenPoints = {};   // 曲线 id -> Set(被隐藏的数据点索引)
 let undoStack = [], redoStack = [];
@@ -767,7 +771,7 @@ function draw(ctx) {
   let drawnAny = false;
   for (const c of curves) {
     if (!c.visible || c.xs.length < 2) continue;
-    const disp = getDisplayData(c);
+    const disp = getDisplayData(c, scaleX === 'log');
     if (disp.xs.length < 2) continue;
     const stride = disp.xs.length > 10000 ? Math.ceil(disp.xs.length / 8000) : 1;
     const pts = [];
@@ -1560,6 +1564,12 @@ $('cleanSmoothChk').addEventListener('change', () => {
   redraw();
   scheduleSave();
 });
+$('fillGapsChk').addEventListener('change', () => {
+  fillGaps = $('fillGapsChk').checked;
+  procRev++;
+  redraw();
+  scheduleSave();
+});
 $('cleanWindowInput').addEventListener('input', () => {
   let w = Math.round(parseFloat($('cleanWindowInput').value));
   if (!isFinite(w)) w = 7;
@@ -1710,17 +1720,67 @@ function isHidden(ci, xi) {
   return !!(s && s.has(xi));
 }
 
-function getDisplayData(c) {
+function fillGap(visX, visY, a, b, count, logX) {
+  const xa = visX[a], xb = visX[b];
+  const ya = visY[a], yb = visY[b];
+  const dy = yb - ya;
+  let ma = dy, mb = dy;
+  if (a > 0) ma = ya - visY[a - 1];
+  if (b + 1 < visY.length) mb = visY[b + 1] - yb;
+  if (dy > 0) { ma = clampNum(ma, 0, 3 * dy); mb = clampNum(mb, 0, 3 * dy); }
+  else if (dy < 0) { ma = clampNum(ma, 3 * dy, 0); mb = clampNum(mb, 3 * dy, 0); }
+  else { ma = 0; mb = 0; }
+  const useLog = logX && xa > 0 && xb > 0 && xa !== xb;
+  const out = [];
+  for (let k = 1; k <= count; k++) {
+    const t = k / (count + 1);
+    const h00 = 2 * t * t * t - 3 * t * t + 1;
+    const h10 = t * t * t - 2 * t * t + t;
+    const h01 = -2 * t * t * t + 3 * t * t;
+    const h11 = t * t * t - t * t;
+    const y = h00 * ya + h10 * ma + h01 * yb + h11 * mb;
+    const x = useLog ? xa * Math.pow(xb / xa, t) : xa + (xb - xa) * t;
+    out.push([x, y]);
+  }
+  return out;
+}
+
+function getDisplayData(c, logX) {
   const key = dataRev + ':' + procRev + ':' + c.xs.length;
   const hit = displayCache.get(c.id);
   if (hit && hit.key === key) return hit;
   const hideSet = hiddenPoints[c.id];
   let xs = c.xs, ys = c.ys;
   if (hideSet && hideSet.size) {
-    xs = []; ys = [];
+    const visX = [], visY = [], gaps = [];
+    let runStart = -1;
     for (let i = 0; i < c.xs.length; i++) {
-      if (hideSet.has(i)) continue;
-      xs.push(c.xs[i]); ys.push(c.ys[i]);
+      if (hideSet.has(i)) {
+        if (runStart < 0) runStart = i;
+      } else {
+        if (runStart >= 0 && visX.length > 0) {
+          gaps.push({ a: visX.length - 1, b: visX.length, span: i - runStart });
+        }
+        runStart = -1;
+        visX.push(c.xs[i]); visY.push(c.ys[i]);
+      }
+    }
+    if (fillGaps && gaps.length) {
+      xs = []; ys = [];
+      let gi = 0;
+      for (let i = 0; i < visX.length; i++) {
+        xs.push(visX[i]); ys.push(visY[i]);
+        const g = gaps[gi];
+        if (g && i === g.a && g.b < visX.length) {
+          const count = Math.min(40, Math.max(8, g.span * 3));
+          for (const p of fillGap(visX, visY, g.a, g.b, count, logX)) {
+            xs.push(p[0]); ys.push(p[1]);
+          }
+          gi++;
+        }
+      }
+    } else {
+      xs = visX; ys = visY;
     }
   }
   if (cleanEnabled && ys.length >= 3) {
@@ -1850,7 +1910,7 @@ function exportData() {
   rows.push('曲线,x,y');
   let dataCount = 0;
   for (const c of valid) {
-    const disp = exportClean ? getDisplayData(c) : c;
+    const disp = exportClean ? getDisplayData(c, readConfig().xScale === 'log') : c;
     const name = csvField(c.name);
     for (let i = 0; i < disp.xs.length; i++) { rows.push(name + ',' + disp.xs[i] + ',' + disp.ys[i]); dataCount++; }
   }
@@ -1998,7 +2058,8 @@ function saveState() {
         xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
         ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
         grid: $('gridChk').checked, smooth: $('smoothSel').value, markerArrow: $('markerArrowChk').checked,
-        cleanEnabled: cleanEnabled, cleanWindow: cleanWindow, cleanSmooth: cleanSmooth, exportClean: exportClean
+        cleanEnabled: cleanEnabled, cleanWindow: cleanWindow, cleanSmooth: cleanSmooth,
+        fillGaps: fillGaps, exportClean: exportClean
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
@@ -2045,6 +2106,7 @@ function loadState() {
     }
     cleanSmooth = !!s.cleanSmooth;
     cleanEnabled = !!s.cleanEnabled;
+    fillGaps = s.fillGaps !== false;
     exportClean = !!s.exportClean;
     hiddenPoints = {}; undoStack = []; redoStack = [];
   }
@@ -2102,6 +2164,7 @@ function loadState() {
   }
   $('cleanEnableChk').checked = cleanEnabled;
   $('cleanSmoothChk').checked = cleanSmooth;
+  $('fillGapsChk').checked = fillGaps;
   $('cleanWindowInput').value = cleanWindow;
   $('exportCleanChk').checked = exportClean;
   procRev++;
