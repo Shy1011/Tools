@@ -108,6 +108,7 @@ input:focus, select:focus, textarea:focus{
     <button id="loadDataBtn" class="btn" type="button">载入数据…</button>
     <input id="dataFileInput" type="file" accept=".csv,.txt" hidden>
     <button id="panBtn" class="btn" type="button">平移</button>
+    <button id="eraserBtn" class="btn" type="button">橡皮擦</button>
     <button id="resetBtn" class="btn" type="button">重置视图</button>
     <button id="darkBtn" class="btn" type="button">暗色模式</button>
   </div>
@@ -156,6 +157,23 @@ input:focus, select:focus, textarea:focus{
           <div class="info-line" id="selInfo">点击数据点可添加标记</div>
           <div class="row"><button id="clearSelBtn" class="btn-sm" type="button">清除全部标记</button></div>
           <div class="row"><label class="chk"><input id="markerArrowChk" type="checkbox" checked> 标记指引箭头</label></div>
+        </div>
+      </details>
+
+      <details class="sec" id="cleanSec">
+        <summary>毛刺清理</summary>
+        <div class="sec-body">
+          <div class="row">
+            <button id="cleanBtn" class="btn primary" type="button">一键去毛刺</button>
+            <button id="cleanUndoBtn" class="btn" type="button">撤销</button>
+            <button id="cleanRedoBtn" class="btn" type="button">重做</button>
+          </div>
+          <div class="row">
+            <label class="f">窗口大小 <input id="cleanWindowInput" class="num" type="number" value="7" min="3" max="21" step="2"></label>
+            <label class="chk"><input id="cleanSmoothChk" type="checkbox"> 叠加滑动平均</label>
+            <label class="chk"><input id="cleanCompareChk" type="checkbox"> 前后对比</label>
+          </div>
+          <div class="hint">中值滤波去除毛刺:窗口越大越平滑;勾选「叠加滑动平均」可进一步抹平小抖动。处理会直接改写曲线数据(导出数据也是清理后的),可撤销/重做(Ctrl+Z / Ctrl+Y)。「前后对比」临时显示原始数据,方便确认没有削掉真实趋势。</div>
         </div>
       </details>
 
@@ -239,6 +257,8 @@ input:focus, select:focus, textarea:focus{
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
             · 每条曲线可设置线条粗细(线宽)<br>
+            · 「毛刺清理」用中值滤波一键去毛刺,可调窗口、可叠加滑动平均、支持撤销/重做<br>
+            · 工具栏「橡皮擦」:开启后拖动框选删除数据点,单击删除最近的一个点<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
             · Log 坐标会自动跳过 0 和负数<br>
@@ -287,6 +307,10 @@ let panMode = false, spaceDown = false;
 let hover = null;
 let selected = [];        // [{ci, xi, dx?, dy?}] 多个选中的点;dx/dy 为标签相对点位的偏移(拖动后生效)
 let zoomRect = null;
+let eraseRect = null;
+let eraserMode = false;
+let undoStack = [], redoStack = [];
+let cleanupMemory = null; // [{id, rawX, rawY, cleanX, cleanY}] 前后对比用
 let drag = null;
 let redrawPending = false;
 const cursors = { x: { on: false, v1: null, v2: null }, y: { on: false, v1: null, v2: null } };
@@ -782,6 +806,16 @@ function draw(ctx) {
     );
     ctx.setLineDash([]);
   }
+  if (eraseRect) {
+    ctx.strokeStyle = '#dc2626';
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([4, 3]);
+    ctx.strokeRect(
+      Math.min(eraseRect.x1, eraseRect.x2), Math.min(eraseRect.y1, eraseRect.y2),
+      Math.abs(eraseRect.x2 - eraseRect.x1), Math.abs(eraseRect.y2 - eraseRect.y1)
+    );
+    ctx.setLineDash([]);
+  }
 
   if (hover && hover.si != null) {
     const c = curves[hover.si];
@@ -1113,6 +1147,7 @@ canvas.addEventListener('mousemove', (e) => {
   if (drag) {
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
+    else if (drag.mode === 'erase') { eraseRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else if (drag.mode === 'cursor') { updateCursorDrag(p); }
     else if (drag.mode === 'readout') { updateReadoutDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
@@ -1161,6 +1196,12 @@ canvas.addEventListener('mouseleave', () => {
 canvas.addEventListener('mousedown', (e) => {
   if (e.button !== 0) return;
   const p = canvasPos(e);
+  if (eraserMode && !spaceDown) {
+    drag = { mode: 'erase', sx: p.x, sy: p.y };
+    eraseRect = { x1: p.x, y1: p.y, x2: p.x, y2: p.y };
+    canvas.style.cursor = 'crosshair';
+    return;
+  }
   for (const it of legendItems) {
     if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) {
       curves[it.ci].visible = !curves[it.ci].visible;
@@ -1216,6 +1257,7 @@ window.addEventListener('mousemove', (e) => {
     const p = { x: e.clientX - r.left, y: e.clientY - r.top };
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
+    else if (drag.mode === 'erase') { eraseRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else if (drag.mode === 'cursor') { updateCursorDrag(p); }
     else if (drag.mode === 'readout') { updateReadoutDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
@@ -1302,7 +1344,9 @@ function markByValue(axis) {
 
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
-  if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'cursor' || drag.mode === 'readout') {
+  if (drag.mode === 'erase') {
+    performErase(drag.sx, drag.sy, eraseRect ? eraseRect.x2 : drag.sx, eraseRect ? eraseRect.y2 : drag.sy, drag.sx, drag.sy);
+  } else if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'cursor' || drag.mode === 'readout') {
     saveState();
   } else if (drag.mode === 'zoom') {
     const w = zoomRect ? Math.abs(zoomRect.x2 - zoomRect.x1) : 0;
@@ -1324,6 +1368,7 @@ window.addEventListener('mouseup', (e) => {
     if (Math.hypot(p.x - drag.sx, p.y - drag.sy) < 5) selectPointAt(drag.sx, drag.sy);
   }
   drag = null; zoomRect = null;
+  eraseRect = null;
   canvas.style.cursor = panMode || spaceDown ? 'grab' : 'crosshair';
   redraw();
 });
@@ -1341,6 +1386,14 @@ window.addEventListener('keydown', (e) => {
 });
 window.addEventListener('keyup', (e) => {
   if (e.code === 'Space') { spaceDown = false; canvas.style.cursor = panMode ? 'grab' : 'crosshair'; }
+});
+window.addEventListener('keydown', (e) => {
+  if ((e.ctrlKey || e.metaKey) && (e.key === 'z' || e.key === 'Z' || e.key === 'y' || e.key === 'Y')) {
+    const t = e.target;
+    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
+    e.preventDefault();
+    if (e.key === 'y' || e.key === 'Y' || e.shiftKey) redoClean(); else undoClean();
+  }
 });
 
 // ---------- 控件 ----------
@@ -1429,6 +1482,12 @@ $('panBtn').addEventListener('click', () => {
   $('panBtn').textContent = panMode ? '缩放' : '平移';
   canvas.style.cursor = panMode ? 'grab' : 'crosshair';
 });
+$('eraserBtn').addEventListener('click', () => {
+  eraserMode = !eraserMode;
+  $('eraserBtn').setAttribute('aria-pressed', String(eraserMode));
+  canvas.style.cursor = eraserMode ? 'crosshair' : (panMode ? 'grab' : 'crosshair');
+  status(eraserMode ? '橡皮擦模式:拖动框选删除数据点,单击删除最近点;再点一次按钮退出' : '橡皮擦已关闭');
+});
 $('resetBtn').addEventListener('click', resetView);
 $('darkBtn').addEventListener('click', () => {
   theme = theme === 'light' ? 'dark' : 'light';
@@ -1436,6 +1495,10 @@ $('darkBtn').addEventListener('click', () => {
   $('darkBtn').textContent = theme === 'dark' ? '亮色模式' : '暗色模式';
   redraw();
 });
+$('cleanBtn').addEventListener('click', applyCleanup);
+$('cleanUndoBtn').addEventListener('click', undoClean);
+$('cleanRedoBtn').addEventListener('click', redoClean);
+$('cleanCompareChk').addEventListener('change', toggleCompare);
 
 for (const id of ['titleInput', 'titleSize', 'titleColor', 'titleTheme',
   'xLabelInput', 'yLabelInput', 'axisFontSel',
@@ -1522,6 +1585,190 @@ function addCurve(name) {
 }
 
 $('addCurveBtn').addEventListener('click', () => addCurve());
+
+// ---------- 毛刺清理与撤销 ----------
+function numStr(v) {
+  if (!isFinite(v)) return String(v);
+  return String(parseFloat(v.toPrecision(10)));
+}
+
+function medianFilter(vals, w) {
+  const n = vals.length;
+  if (n < 3 || w < 3) return vals.slice();
+  const k = Math.floor((w - 1) / 2);
+  const idx = (j) => {
+    if (j < 0) return -j;
+    if (j >= n) return 2 * n - 2 - j;
+    return j;
+  };
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    const win = [];
+    for (let j = i - k; j <= i + k; j++) win.push(vals[idx(j)]);
+    win.sort((a, b) => a - b);
+    out[i] = win[Math.floor(win.length / 2)];
+  }
+  return out;
+}
+
+function movingAvg(vals, w) {
+  const n = vals.length;
+  if (n < 2) return vals.slice();
+  const k = Math.min(Math.floor((w - 1) / 2), n - 1);
+  const out = new Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0, c = 0;
+    for (let j = Math.max(0, i - k); j <= Math.min(n - 1, i + k); j++) { s += vals[j]; c++; }
+    out[i] = s / c;
+  }
+  return out;
+}
+
+function captureDataState() {
+  const arr = [];
+  for (const sec of curvesBox.querySelectorAll('.curve-sec')) {
+    arr.push({ id: sec.dataset.id, xText: sec.querySelector('.xData').value, yText: sec.querySelector('.yData').value });
+  }
+  return arr;
+}
+
+function applyDataState(snap) {
+  for (const s of snap) {
+    const sec = curvesBox.querySelector('.curve-sec[data-id="' + s.id + '"]');
+    if (!sec) continue;
+    sec.querySelector('.xData').value = s.xText;
+    sec.querySelector('.yData').value = s.yText;
+    const c = curves.find((cc) => cc.id === s.id);
+    if (c) {
+      const px = parseList(s.xText), py = parseList(s.yText);
+      const x2 = px.vals.length ? px.vals : py.vals.map((_, k) => k);
+      const n = Math.min(x2.length, py.vals.length);
+      c.xs = x2.slice(0, n);
+      c.ys = py.vals.slice(0, n);
+    }
+  }
+  selected = selected.filter((s) => s && s.ci >= 0 && s.ci < curves.length && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
+  updateSelInfo();
+  redraw();
+  scheduleSave();
+}
+
+function pushUndo() {
+  undoStack.push(captureDataState());
+  if (undoStack.length > 50) undoStack.shift();
+  redoStack = [];
+}
+
+function undoClean() {
+  if (!undoStack.length) { warn('没有可撤销的操作'); return; }
+  redoStack.push(captureDataState());
+  applyDataState(undoStack.pop());
+  status('已撤销');
+}
+
+function redoClean() {
+  if (!redoStack.length) { warn('没有可重做的操作'); return; }
+  undoStack.push(captureDataState());
+  applyDataState(redoStack.pop());
+  status('已重做');
+}
+
+function applyCleanup() {
+  let w = Math.round(parseFloat($('cleanWindowInput').value));
+  if (!isFinite(w)) w = 7;
+  w = Math.max(3, Math.min(21, w));
+  if (w % 2 === 0) w++;
+  $('cleanWindowInput').value = w;
+  const doSmooth = $('cleanSmoothChk').checked;
+  const edits = [];
+  const mem = [];
+  let touched = 0;
+  for (const sec of curvesBox.querySelectorAll('.curve-sec')) {
+    const id = sec.dataset.id;
+    const rawX = sec.querySelector('.xData').value;
+    const rawY = sec.querySelector('.yData').value;
+    const px = parseList(rawX), py = parseList(rawY);
+    if (!py.vals.length) continue;
+    const xs = px.vals.length ? px.vals.slice() : py.vals.map((_, k) => k);
+    const ys = py.vals.slice();
+    const n = Math.min(xs.length, ys.length);
+    let fy = ys.slice(0, n);
+    fy = medianFilter(fy, w);
+    if (doSmooth) fy = movingAvg(fy, w);
+    const cleanX = xs.slice(0, n).map(numStr).join(' ');
+    const cleanY = fy.map(numStr).join(' ');
+    edits.push({ id, xText: cleanX, yText: cleanY });
+    mem.push({ id, rawX, rawY, cleanX, cleanY });
+    touched++;
+  }
+  if (!touched) { warn('没有可清理的数据'); return; }
+  pushUndo();
+  applyDataState(edits);
+  cleanupMemory = mem;
+  $('cleanCompareChk').checked = false;
+  status('已去毛刺 ' + touched + ' 条曲线(窗口 ' + w + (doSmooth ? ' + 滑动平均' : '') + ')');
+}
+
+function toggleCompare() {
+  if (!cleanupMemory || !cleanupMemory.length) {
+    $('cleanCompareChk').checked = false;
+    warn('请先执行「一键去毛刺」');
+    return;
+  }
+  const showRaw = $('cleanCompareChk').checked;
+  const edits = cleanupMemory.map((m) => ({ id: m.id, xText: showRaw ? m.rawX : m.cleanX, yText: showRaw ? m.rawY : m.cleanY }));
+  applyDataState(edits);
+}
+
+function performErase(px1, py1, px2, py2, clickX, clickY) {
+  const cfg = readConfig();
+  const rect = getPlotRect(cfg);
+  const wpx = Math.abs(px2 - px1), hpx = Math.abs(py2 - py1);
+  const plan = [];
+  let total = 0;
+  if (wpx <= 5 && hpx <= 5) {
+    const near = findNearest(clickX, clickY);
+    if (near) { plan.push({ ci: near.ci, set: new Set([near.xi]) }); total = 1; }
+  } else {
+    const dxLo = invX(Math.min(px1, px2), cfg.xScale, rect.L, rect.W);
+    const dxHi = invX(Math.max(px1, px2), cfg.xScale, rect.L, rect.W);
+    const dyHi = invY(Math.min(py1, py2), cfg.yScale, rect.B, rect.H);
+    const dyLo = invY(Math.max(py1, py2), cfg.yScale, rect.B, rect.H);
+    for (let ci = 0; ci < curves.length; ci++) {
+      const c = curves[ci];
+      if (!c.xs.length) continue;
+      const set = new Set();
+      for (let i = 0; i < c.xs.length; i++) {
+        if (c.xs[i] >= dxLo && c.xs[i] <= dxHi && c.ys[i] >= dyLo && c.ys[i] <= dyHi) set.add(i);
+      }
+      if (set.size) { plan.push({ ci, set }); total += set.size; }
+    }
+  }
+  if (!total) { warn('没有删除任何数据点'); return; }
+  pushUndo();
+  for (const p of plan) {
+    const c = curves[p.ci];
+    const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+    if (!sec) continue;
+    const xToks = String(sec.querySelector('.xData').value).split(/[\s,;]+/).filter((t) => t !== '');
+    const yToks = String(sec.querySelector('.yData').value).split(/[\s,;]+/).filter((t) => t !== '');
+    const nx = [], ny = [];
+    for (let i = 0; i < c.xs.length; i++) {
+      if (p.set.has(i)) continue;
+      nx.push(xToks[i] !== undefined ? xToks[i] : numStr(c.xs[i]));
+      ny.push(yToks[i] !== undefined ? yToks[i] : numStr(c.ys[i]));
+    }
+    c.xs = nx.map(Number);
+    c.ys = ny.map(Number);
+    sec.querySelector('.xData').value = nx.join(' ');
+    sec.querySelector('.yData').value = ny.join(' ');
+  }
+  selected = selected.filter((s) => s && s.ci >= 0 && s.ci < curves.length && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
+  updateSelInfo();
+  redraw();
+  scheduleSave();
+  status('橡皮擦:删除 ' + total + ' 个数据点(Ctrl+Z 可撤销)');
+}
 
 // ---------- 工具与初始化 ----------
 function status(msg) { $('status').textContent = msg; }
@@ -1657,13 +1904,17 @@ function loadDataFromFile(file) {
       sec.querySelector('.xData').value = groups[name].xs.join(' ');
       sec.querySelector('.yData').value = groups[name].ys.join(' ');
       const w = metaWidths[name];
-      if (isFinite(w)) {
-        c.width = Math.max(1, Math.min(12, w));
-        const wi = sec.querySelector('.curve-width');
-        if (wi) wi.value = c.width;
-      }
+    if (isFinite(w)) {
+      c.width = Math.max(1, Math.min(12, w));
+      const wi = sec.querySelector('.curve-width');
+      if (wi) wi.value = c.width;
     }
-    plot();
+  }
+  cleanupMemory = null;
+  undoStack = [];
+  redoStack = [];
+  $('cleanCompareChk').checked = false;
+  plot();
     selected = [];
     for (const m of markers) {
       const ci = order.indexOf(m.name);
@@ -1700,7 +1951,8 @@ function saveState() {
         yLabelSize: $('yLabelSize').value, yLabelColor: $('yLabelColor').value, yLabelTheme: $('yLabelTheme').checked,
         xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
         ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
-        grid: $('gridChk').checked, smooth: $('smoothSel').value, markerArrow: $('markerArrowChk').checked
+        grid: $('gridChk').checked, smooth: $('smoothSel').value, markerArrow: $('markerArrowChk').checked,
+        cleanWindow: $('cleanWindowInput').value, cleanSmooth: $('cleanSmoothChk').checked
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
@@ -1740,6 +1992,9 @@ function loadState() {
     set('tickInput', s.ticks); set('tickModeSel', s.tickMode); set('tickStep', s.tickStep); set('customTicks', s.customTicks);
     setChk('gridChk', s.grid); set('smoothSel', s.smooth);
     setChk('markerArrowChk', s.markerArrow);
+    set('cleanWindowInput', s.cleanWindow); setChk('cleanSmoothChk', s.cleanSmooth);
+    cleanupMemory = null; undoStack = []; redoStack = [];
+    $('cleanCompareChk').checked = false;
   }
   if (state && state.labelPos) {
     if (state.labelPos.title) labelPos.title = state.labelPos.title;
