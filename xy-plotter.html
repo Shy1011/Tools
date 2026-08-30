@@ -176,6 +176,17 @@ input:focus, select:focus, textarea:focus{
       </details>
 
       <details class="sec">
+        <summary>测量光标</summary>
+        <div class="sec-body">
+          <div class="row">
+            <label class="chk"><input id="cursorXChk" type="checkbox"> X 光标(竖线,测 ΔX)</label>
+            <label class="chk"><input id="cursorYChk" type="checkbox"> Y 光标(横线,测 ΔY)</label>
+          </div>
+          <div class="hint">开启后在绘图区出现两条虚线光标,直接拖动即可测量两点间差值;读数显示在绘图区左上角,并带有 ΔX / ΔY 箭头标记。X / Y 可单独或同时开启。</div>
+        </div>
+      </details>
+
+      <details class="sec">
         <summary>标题与坐标轴</summary>
         <div class="sec-body">
           <label class="f">标题 <input id="titleInput" type="text" value="曲线图"></label>
@@ -222,6 +233,7 @@ input:focus, select:focus, textarea:focus{
             · 按住空格键拖动画布可平移<br>
             · 鼠标悬停数据点显示精确坐标<br>
             · 单击数据点可添加/取消标记,支持同时标记多个点<br>
+            · 勾选「测量光标」中的 X / Y 光标,拖动虚线即可测量两点间 ΔX / ΔY,可同时开启<br>
             · 可输入 X / Y 值在指定曲线上精确定位标记点<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
@@ -273,6 +285,7 @@ let selected = [];        // [{ci, xi, dx?, dy?}] 多个选中的点;dx/dy 为�
 let zoomRect = null;
 let drag = null;
 let redrawPending = false;
+const cursors = { x: { on: false, v1: null, v2: null }, y: { on: false, v1: null, v2: null } };
 
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
@@ -406,12 +419,17 @@ function computeView(cfg) {
 function resetView() {
   view.autoX = true; view.autoY = true;
   selected = [];
+  resetCursorPositions();
   $('selInfo').textContent = '点击数据点可添加标记';
   redraw();
 }
 
 function syncRangeInputs() {
   view.autoX = false; view.autoY = false;
+  if (isNum(cursors.x.v1)) cursors.x.v1 = clampNum(cursors.x.v1, view.xMin, view.xMax);
+  if (isNum(cursors.x.v2)) cursors.x.v2 = clampNum(cursors.x.v2, view.xMin, view.xMax);
+  if (isNum(cursors.y.v1)) cursors.y.v1 = clampNum(cursors.y.v1, view.yMin, view.yMax);
+  if (isNum(cursors.y.v2)) cursors.y.v2 = clampNum(cursors.y.v2, view.yMin, view.yMax);
 }
 
 // ---------- 刻度与映射 ----------
@@ -760,11 +778,11 @@ function draw(ctx) {
     if (c && c.visible && hover.xi < c.xs.length) {
       const px = sX(c.xs[hover.xi], scaleX, L, plotW), py = sY(c.ys[hover.xi], scaleY, B, plotH);
       ctx.strokeStyle = '#ffffff';
-      ctx.lineWidth = 3;
-      ctx.beginPath(); ctx.arc(px, py, 4.5, 0, Math.PI * 2); ctx.stroke();
-      ctx.strokeStyle = c.color;
       ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(px, py, 3.5, 0, Math.PI * 2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 3.4, 0, Math.PI * 2); ctx.stroke();
+      ctx.strokeStyle = c.color;
+      ctx.lineWidth = 1.3;
+      ctx.beginPath(); ctx.arc(px, py, 2.4, 0, Math.PI * 2); ctx.stroke();
     }
   }
 
@@ -779,23 +797,23 @@ function draw(ctx) {
       if (isFinite(x) && isFinite(y) && logOk(x, scaleX) && logOk(y, scaleY)) {
         const px = sX(x, scaleX, L, plotW), py = sY(y, scaleY, B, plotH);
         ctx.strokeStyle = '#ffffff';
-        ctx.lineWidth = 3.5;
-        ctx.beginPath(); ctx.arc(px, py, 7.5, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 2;
+        ctx.beginPath(); ctx.arc(px, py, 4.6, 0, Math.PI * 2); ctx.stroke();
         ctx.strokeStyle = c.color;
-        ctx.lineWidth = 2.5;
-        ctx.beginPath(); ctx.arc(px, py, 6, 0, Math.PI * 2); ctx.stroke();
+        ctx.lineWidth = 1.4;
+        ctx.beginPath(); ctx.arc(px, py, 3.2, 0, Math.PI * 2); ctx.stroke();
 
         const moved = s.dx !== undefined && s.dy !== undefined;
         const ax = px + (moved ? s.dx : 11);
         const ay = py + (moved ? s.dy : -10);
         const text = c.name + ' (' + fmt(x) + ', ' + fmt(y) + ')';
         ctx.fillStyle = T.text;
-        ctx.font = '11px ' + MONO;
+        ctx.font = '10px ' + MONO;
         ctx.textAlign = 'left';
         ctx.textBaseline = 'bottom';
         ctx.fillText(text, ax, ay);
         const tw = ctx.measureText(text).width;
-        const rx = ax - 4, ry = ay - 12, rw = tw + 8, rh = 16;
+        const rx = ax - 3, ry = ay - 11, rw = tw + 6, rh = 14;
         markerRects.push({ x: rx, y: ry, w: rw, h: rh, si });
 
         if (moved && markerArrowOn) {
@@ -821,6 +839,157 @@ function draw(ctx) {
         }
       }
     }
+  }
+
+  drawCursors(ctx, cfg, L, T_, B, plotW, plotH);
+}
+
+function clampNum(v, lo, hi) {
+  return Math.max(lo, Math.min(hi, v));
+}
+
+function isNum(v) {
+  return typeof v === 'number' && isFinite(v);
+}
+
+function ensureCursorPositions() {
+  if (cursors.x.on) {
+    if (!isNum(cursors.x.v1) || !isNum(cursors.x.v2)) {
+      cursors.x.v1 = view.xMin + (view.xMax - view.xMin) / 3;
+      cursors.x.v2 = view.xMin + (view.xMax - view.xMin) * 2 / 3;
+    }
+  }
+  if (cursors.y.on) {
+    if (!isNum(cursors.y.v1) || !isNum(cursors.y.v2)) {
+      cursors.y.v1 = view.yMin + (view.yMax - view.yMin) / 3;
+      cursors.y.v2 = view.yMin + (view.yMax - view.yMin) * 2 / 3;
+    }
+  }
+}
+
+function resetCursorPositions() {
+  cursors.x.v1 = null; cursors.x.v2 = null;
+  cursors.y.v1 = null; cursors.y.v2 = null;
+}
+
+function cursorHit(px, py) {
+  const cfg = readConfig();
+  const rect = getPlotRect(cfg);
+  const L = rect.L, T_ = rect.T, B = rect.B;
+  const plotW = rect.W, plotH = rect.H;
+  if (px < L || px > L + plotW || py < T_ || py > B) return null;
+  const TOL = 7;
+  if (cursors.x.on) {
+    for (const key of ['v1', 'v2']) {
+      const v = cursors.x[key];
+      if (!isNum(v)) continue;
+      if (Math.abs(sX(v, cfg.xScale, L, plotW) - px) <= TOL) return { axis: 'x', key };
+    }
+  }
+  if (cursors.y.on) {
+    for (const key of ['v1', 'v2']) {
+      const v = cursors.y[key];
+      if (!isNum(v)) continue;
+      if (Math.abs(sY(v, cfg.yScale, B, plotH) - py) <= TOL) return { axis: 'y', key };
+    }
+  }
+  return null;
+}
+
+function drawCursors(ctx, cfg, L, T_, B, plotW, plotH) {
+  ensureCursorPositions();
+  const scaleX = cfg.xScale, scaleY = cfg.yScale;
+  const T = THEMES[theme];
+  const XCOL = '#2563eb', YCOL = '#d97706';
+  const readLines = [];
+  ctx.font = '10px ' + MONO;
+
+  if (cursors.x.on && isNum(cursors.x.v1) && isNum(cursors.x.v2)) {
+    const p1 = sX(cursors.x.v1, scaleX, L, plotW);
+    const p2 = sX(cursors.x.v2, scaleX, L, plotW);
+    ctx.strokeStyle = XCOL;
+    ctx.fillStyle = XCOL;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([5, 4]);
+    for (const [v, sx, label] of [[cursors.x.v1, p1, 'X1'], [cursors.x.v2, p2, 'X2']]) {
+      ctx.beginPath(); ctx.moveTo(sx, T_); ctx.lineTo(sx, B); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(sx, T_ + 1); ctx.lineTo(sx - 5, T_ + 9); ctx.lineTo(sx + 5, T_ + 9); ctx.closePath(); ctx.fill();
+      const txt = label + '=' + fmt(v);
+      const tw = ctx.measureText(txt).width;
+      ctx.textAlign = 'left'; ctx.textBaseline = 'top';
+      ctx.fillText(txt, Math.min(sx + 7, L + plotW - tw - 2), T_ + 3);
+      ctx.setLineDash([5, 4]);
+    }
+    ctx.setLineDash([]);
+    if (Math.abs(p2 - p1) >= 16) {
+      const ya = B - 12;
+      const a1 = Math.min(p1, p2), a2 = Math.max(p1, p2);
+      ctx.beginPath(); ctx.moveTo(a1, ya); ctx.lineTo(a2, ya); ctx.stroke();
+      for (const ax of [a1, a2]) {
+        const dir = ax === a1 ? 1 : -1;
+        ctx.beginPath(); ctx.moveTo(ax, ya); ctx.lineTo(ax + dir * 5, ya - 5); ctx.lineTo(ax + dir * 5, ya + 5); ctx.closePath(); ctx.fill();
+      }
+      const dtxt = 'ΔX=' + fmt(cursors.x.v2 - cursors.x.v1);
+      const tw = ctx.measureText(dtxt).width;
+      ctx.fillStyle = T.bg;
+      ctx.fillRect((a1 + a2) / 2 - tw / 2 - 3, ya - 9, tw + 6, 13);
+      ctx.fillStyle = XCOL;
+      ctx.fillText(dtxt, (a1 + a2) / 2 - tw / 2, ya - 8);
+    }
+    readLines.push('X1=' + fmt(cursors.x.v1) + '  X2=' + fmt(cursors.x.v2) + '  ΔX=' + fmt(cursors.x.v2 - cursors.x.v1));
+  }
+
+  if (cursors.y.on && isNum(cursors.y.v1) && isNum(cursors.y.v2)) {
+    const p1 = sY(cursors.y.v1, scaleY, B, plotH);
+    const p2 = sY(cursors.y.v2, scaleY, B, plotH);
+    ctx.strokeStyle = YCOL;
+    ctx.fillStyle = YCOL;
+    ctx.lineWidth = 1.2;
+    ctx.setLineDash([5, 4]);
+    for (const [v, sy, label] of [[cursors.y.v1, p1, 'Y1'], [cursors.y.v2, p2, 'Y2']]) {
+      ctx.beginPath(); ctx.moveTo(L, sy); ctx.lineTo(L + plotW, sy); ctx.stroke();
+      ctx.setLineDash([]);
+      ctx.beginPath(); ctx.moveTo(L + 1, sy); ctx.lineTo(L + 9, sy - 5); ctx.lineTo(L + 9, sy + 5); ctx.closePath(); ctx.fill();
+      const txt = label + '=' + fmt(v);
+      ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+      ctx.fillText(txt, L + 13, sy);
+      ctx.setLineDash([5, 4]);
+    }
+    ctx.setLineDash([]);
+    if (Math.abs(p2 - p1) >= 16) {
+      const xa = L + 14;
+      const a1 = Math.min(p1, p2), a2 = Math.max(p1, p2);
+      ctx.beginPath(); ctx.moveTo(xa, a1); ctx.lineTo(xa, a2); ctx.stroke();
+      for (const ay of [a1, a2]) {
+        const dir = ay === a1 ? 1 : -1;
+        ctx.beginPath(); ctx.moveTo(xa, ay); ctx.lineTo(xa - 5, ay + dir * 5); ctx.lineTo(xa + 5, ay + dir * 5); ctx.closePath(); ctx.fill();
+      }
+      const dtxt = 'ΔY=' + fmt(cursors.y.v2 - cursors.y.v1);
+      const tw = ctx.measureText(dtxt).width;
+      ctx.fillStyle = T.bg;
+      ctx.fillRect(xa - tw / 2 - 3, (a1 + a2) / 2 - 7, tw + 6, 13);
+      ctx.fillStyle = YCOL;
+      ctx.fillText(dtxt, xa - tw / 2, (a1 + a2) / 2 - 6);
+    }
+    readLines.push('Y1=' + fmt(cursors.y.v1) + '  Y2=' + fmt(cursors.y.v2) + '  ΔY=' + fmt(cursors.y.v2 - cursors.y.v1));
+  }
+
+  if (readLines.length) {
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'top';
+    let wmax = 0;
+    for (const ln of readLines) wmax = Math.max(wmax, ctx.measureText(ln).width);
+    const bw = wmax + 14, bh = readLines.length * 15 + 8;
+    const bx = L + 8, by = T_ + 8;
+    ctx.globalAlpha = 0.9;
+    ctx.fillStyle = T.bg;
+    ctx.fillRect(bx, by, bw, bh);
+    ctx.globalAlpha = 1;
+    ctx.strokeStyle = T.frame;
+    ctx.strokeRect(bx, by, bw, bh);
+    ctx.fillStyle = T.text;
+    readLines.forEach((ln, i) => ctx.fillText(ln, bx + 7, by + 5 + i * 15));
   }
 }
 
@@ -872,6 +1041,23 @@ function updateLabelDrag(p) {
   redraw();
 }
 
+function updateCursorDrag(p) {
+  const cfg = readConfig();
+  const rect = getPlotRect(cfg);
+  if (drag.axis === 'x') {
+    cursors.x[drag.key] = clampNum(invX(p.x, cfg.xScale, rect.L, rect.W), view.xMin, view.xMax);
+    if (isNum(cursors.x.v1) && isNum(cursors.x.v2)) {
+      status('X光标  X1=' + fmt(cursors.x.v1) + '  X2=' + fmt(cursors.x.v2) + '  ΔX=' + fmt(cursors.x.v2 - cursors.x.v1));
+    }
+  } else {
+    cursors.y[drag.key] = clampNum(invY(p.y, cfg.yScale, rect.B, rect.H), view.yMin, view.yMax);
+    if (isNum(cursors.y.v1) && isNum(cursors.y.v2)) {
+      status('Y光标  Y1=' + fmt(cursors.y.v1) + '  Y2=' + fmt(cursors.y.v2) + '  ΔY=' + fmt(cursors.y.v2 - cursors.y.v1));
+    }
+  }
+  redraw();
+}
+
 function findNearest(px, py) {
   const cfg = readConfig();
   const scaleX = cfg.xScale, scaleY = cfg.yScale;
@@ -903,6 +1089,7 @@ canvas.addEventListener('mousemove', (e) => {
   if (drag) {
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
+    else if (drag.mode === 'cursor') { updateCursorDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
     return;
   }
@@ -929,6 +1116,9 @@ canvas.addEventListener('mousemove', (e) => {
     const rect = getPlotRect(cfg);
     $('status').textContent = 'x = ' + fmt(invX(p.x, cfg.xScale, rect.L, rect.W)) + '  y = ' + fmt(invY(p.y, cfg.yScale, rect.B, rect.H));
   }
+  const ch = cursorHit(p.x, p.y);
+  if (ch) canvas.style.cursor = ch.axis === 'x' ? 'ew-resize' : 'ns-resize';
+  else canvas.style.cursor = panMode || spaceDown ? 'grab' : 'crosshair';
   redraw();
 });
 
@@ -966,6 +1156,12 @@ canvas.addEventListener('mousedown', (e) => {
       return;
     }
   }
+  const chit = cursorHit(p.x, p.y);
+  if (chit) {
+    drag = { mode: 'cursor', axis: chit.axis, key: chit.key, sx: p.x, sy: p.y };
+    canvas.style.cursor = chit.axis === 'x' ? 'ew-resize' : 'ns-resize';
+    return;
+  }
   for (const k of ['title', 'xAxis', 'yAxis']) {
     const r = labelRects[k];
     if (r && p.x >= r.x && p.x <= r.x + r.w && p.y >= r.y && p.y <= r.y + r.h) {
@@ -984,6 +1180,7 @@ window.addEventListener('mousemove', (e) => {
     const p = { x: e.clientX - r.left, y: e.clientY - r.top };
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
+    else if (drag.mode === 'cursor') { updateCursorDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
   }
 });
@@ -1068,7 +1265,7 @@ function markByValue(axis) {
 
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
-  if (drag.mode === 'label' || drag.mode === 'markerLabel') {
+  if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'cursor') {
     saveState();
   } else if (drag.mode === 'zoom') {
     const w = zoomRect ? Math.abs(zoomRect.x2 - zoomRect.x1) : 0;
@@ -1125,6 +1322,18 @@ for (const [btnId, inputId] of [['markerByXBtn', 'markerXInput'], ['markerByYBtn
     if (e.key === 'Enter') { e.preventDefault(); $(btnId).click(); }
   });
 }
+$('cursorXChk').addEventListener('change', () => {
+  cursors.x.on = $('cursorXChk').checked;
+  if (cursors.x.on) ensureCursorPositions();
+  redraw();
+  scheduleSave();
+});
+$('cursorYChk').addEventListener('change', () => {
+  cursors.y.on = $('cursorYChk').checked;
+  if (cursors.y.on) ensureCursorPositions();
+  redraw();
+  scheduleSave();
+});
 $('exampleBtn').addEventListener('click', () => {
   if (!curves.length) addCurve();
   while (curves.length > 1) {
@@ -1291,7 +1500,17 @@ function exportData() {
     ['X轴字号', $('xLabelSize').value],
     ['Y轴字号', $('yLabelSize').value]
   ].map((r) => r.map(csvField).join(','));
-  for (const c of valid) rows.push('曲线线宽,' + csvField(c.name) + ',' + (c.width || 2));
+  for (const c of valid) rows.push('曲线粗细,' + csvField(c.name) + ',' + (c.width || 2));
+  if (selected.length) {
+    rows.push('');
+    rows.push('标记,曲线,x,y,dx,dy');
+    for (const s of selected) {
+      const c = curves[s.ci];
+      if (!c || s.xi >= c.xs.length) continue;
+      rows.push('标记,' + csvField(c.name) + ',' + c.xs[s.xi] + ',' + c.ys[s.xi] +
+        ',' + (isFinite(s.dx) ? s.dx : '') + ',' + (isFinite(s.dy) ? s.dy : ''));
+    }
+  }
   rows.push('');
   rows.push('曲线,x,y');
   let dataCount = 0;
@@ -1347,12 +1566,17 @@ function loadDataFromFile(file) {
       warn('CSV 格式不正确:未找到 曲线,x,y 数据表头');
       return;
     }
-    const meta = {}, metaWidths = {};
+    const meta = {}, metaWidths = {}, markers = [];
     for (let i = 0; i < dataStart; i++) {
       const r = rows[i];
       if (!r || !r.length) continue;
       const key = String(r[0]).trim();
-      if (key === '曲线线宽' && r.length >= 3) metaWidths[String(r[1]).trim()] = parseFloat(r[2]);
+      if ((key === '曲线线宽' || key === '曲线粗细') && r.length >= 3) metaWidths[String(r[1]).trim()] = parseFloat(r[2]);
+      else if (key === '标记' && r.length >= 6 && !(String(r[1]).trim() === '曲线' && String(r[2]).trim() === 'x'))
+        markers.push({
+          name: String(r[1]).trim(), x: Number(r[2]), y: Number(r[3]),
+          dx: r[4] === '' ? NaN : Number(r[4]), dy: r[5] === '' ? NaN : Number(r[5])
+        });
       else if (r.length >= 2) meta[key] = String(r[1]).trim();
     }
     const groups = {}, order = [];
@@ -1397,6 +1621,20 @@ function loadDataFromFile(file) {
       }
     }
     plot();
+    selected = [];
+    for (const m of markers) {
+      const ci = order.indexOf(m.name);
+      if (ci < 0 || !isFinite(m.x) || !isFinite(m.y)) continue;
+      const c = curves[ci];
+      if (!c || !c.xs.length) continue;
+      let bi = -1, bd = Infinity;
+      for (let i = 0; i < c.xs.length; i++) {
+        const d = Math.hypot(c.xs[i] - m.x, c.ys[i] - m.y);
+        if (d < bd) { bd = d; bi = i; }
+      }
+      if (bi >= 0) selected.push({ ci, xi: bi, dx: isFinite(m.dx) ? m.dx : undefined, dy: isFinite(m.dy) ? m.dy : undefined });
+    }
+    updateSelInfo();
     saveState();
     status('已载入 ' + order.length + ' 条曲线');
   }).catch((e) => warn('读取文件失败:' + e.message));
@@ -1431,7 +1669,11 @@ function saveState() {
           yText: sec ? sec.querySelector('.yData').value : ''
         };
       }),
-      selected: selected.map((s) => ({ ci: s.ci, xi: s.xi, dx: s.dx, dy: s.dy }))
+      selected: selected.map((s) => ({ ci: s.ci, xi: s.xi, dx: s.dx, dy: s.dy })),
+      cursors: {
+        x: { on: cursors.x.on, v1: cursors.x.v1, v2: cursors.x.v2 },
+        y: { on: cursors.y.on, v1: cursors.y.v1, v2: cursors.y.v2 }
+      }
     };
     localStorage.setItem('xy-plotter-state', JSON.stringify(state));
   } catch (e) {
@@ -1495,6 +1737,14 @@ function loadState() {
   }
   syncTickModeUI();
   if (hasData) plot(); else redraw();
+  if (state && state.cursors) {
+    const cx = state.cursors.x, cy = state.cursors.y;
+    if (cx) { cursors.x.on = !!cx.on; cursors.x.v1 = isNum(cx.v1) ? cx.v1 : null; cursors.x.v2 = isNum(cx.v2) ? cx.v2 : null; }
+    if (cy) { cursors.y.on = !!cy.on; cursors.y.v1 = isNum(cy.v1) ? cy.v1 : null; cursors.y.v2 = isNum(cy.v2) ? cy.v2 : null; }
+  }
+  $('cursorXChk').checked = cursors.x.on;
+  $('cursorYChk').checked = cursors.y.on;
+  ensureCursorPositions();
   if (state && Array.isArray(state.selected)) {
     selected = state.selected
       .filter((s) => s && isFinite(s.ci) && isFinite(s.xi) && s.ci >= 0 && s.ci < curves.length && s.xi < curves[s.ci].xs.length)
