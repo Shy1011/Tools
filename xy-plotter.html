@@ -241,7 +241,8 @@ input:focus, select:focus, textarea:focus{
             · 每条曲线可设置线条粗细(线宽)<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
-            · Log 坐标会自动跳过 0 和负数
+            · Log 坐标会自动跳过 0 和负数<br>
+            · Log 坐标范围较小时会自动细分刻度并标注(如 0.1–0.7 会标出 0.1、0.2、…、0.7)
           </div>
         </div>
       </details>
@@ -464,19 +465,33 @@ function niceTicks(min, max, count) {
   return out;
 }
 
-function logTicks(min, max) {
+function logTicks(min, max, count, pxPerDecade) {
   if (!(min > 0) || !(max > min) || !isFinite(min) || !isFinite(max)) return [];
+  const decades = Math.log10(max) - Math.log10(min);
+  let level = 0;
+  if (isFinite(pxPerDecade) && pxPerDecade > 0) {
+    if (pxPerDecade > 44) level = 2;          // 空间充足:细分 1–9 倍
+    else if (pxPerDecade > 22) level = 1;     // 空间中等:细分 1-2-5 倍
+  }
+  const cap = Math.max(2, count || 10) * 1.5; // 最多约 1.5 倍期望刻度数
+  if (level === 2 && decades * 9 > cap) level = 1;
+  if (level === 1 && decades * 3 > cap) level = 0;
+  const mults = level === 2 ? [1, 2, 3, 4, 5, 6, 7, 8, 9] : level === 1 ? [1, 2, 5] : [1];
   const out = [];
-  const e0 = Math.ceil(Math.log10(min));
+  const e0 = Math.floor(Math.log10(min));
   const e1 = Math.floor(Math.log10(max));
   for (let e = e0; e <= e1; e++) {
-    const v = Math.pow(10, e);
-    if (v >= min * (1 - 1e-9) && v <= max * (1 + 1e-9)) out.push(v);
+    const base = Math.pow(10, e);
+    for (const m of mults) {
+      const v = m * base;
+      if (v < min * (1 - 1e-9) || v > max * (1 + 1e-9)) continue;
+      out.push(v);
+    }
   }
   return out;
 }
 
-function computeTicks(cfg, min, max, isLog, dataVals) {
+function computeTicks(cfg, min, max, isLog, dataVals, pxPerDecade) {
   if (!isFinite(min) || !isFinite(max) || max <= min) return [min];
   const mode = cfg.tickMode || 'auto';
   if (mode === 'equal') {
@@ -527,7 +542,7 @@ function computeTicks(cfg, min, max, isLog, dataVals) {
     out.sort((a, b) => a - b);
     return out.length ? out : niceTicks(min, max, cfg.ticks);
   }
-  return isLog ? logTicks(min, max) : niceTicks(min, max, cfg.ticks);
+  return isLog ? logTicks(min, max, cfg.ticks, pxPerDecade) : niceTicks(min, max, cfg.ticks);
 }
 
 function sX(v, scale, L, W) {
@@ -554,7 +569,11 @@ function getPlotRect(cfg) {
   let titleH = 12;
   if (cfg.title) titleH += (cfg.titleSize || 18) + 4;
   const scaleY = cfg.yScale;
-  const yTicks = computeTicks(cfg, view.yMin, view.yMax, scaleY === 'log', collectData().allY);
+  let yPx = Infinity;
+  if (scaleY === 'log' && view.yMax > view.yMin) {
+    yPx = Math.max(50, cssH - titleH - 42) / (Math.log10(view.yMax) - Math.log10(view.yMin));
+  }
+  const yTicks = computeTicks(cfg, view.yMin, view.yMax, scaleY === 'log', collectData().allY, yPx);
   ctx.font = '11px ' + MONO;
   let yw = 0;
   for (const t of yTicks) yw = Math.max(yw, ctx.measureText(fmt(t)).width);
@@ -612,8 +631,10 @@ function draw(ctx) {
   if (plotW <= 10 || plotH <= 10) return;
   const logOk = (v, scale) => !(scale === 'log' && v <= 0);
   const { allX, allY } = collectData();
-  const xTicks = computeTicks(cfg, view.xMin, view.xMax, scaleX === 'log', allX);
-  const yTicks = computeTicks(cfg, view.yMin, view.yMax, scaleY === 'log', allY);
+  const xPx = scaleX === 'log' && view.xMax > view.xMin ? plotW / (Math.log10(view.xMax) - Math.log10(view.xMin)) : Infinity;
+  const yPx = scaleY === 'log' && view.yMax > view.yMin ? plotH / (Math.log10(view.yMax) - Math.log10(view.yMin)) : Infinity;
+  const xTicks = computeTicks(cfg, view.xMin, view.xMax, scaleX === 'log', allX, xPx);
+  const yTicks = computeTicks(cfg, view.yMin, view.yMax, scaleY === 'log', allY, yPx);
 
   const gx = (v) => sX(v, scaleX, L, plotW);
   const gy = (v) => sY(v, scaleY, B, plotH);
@@ -621,37 +642,16 @@ function draw(ctx) {
     ctx.lineWidth = 1;
     ctx.strokeStyle = T.grid;
     ctx.setLineDash([]);
+    const isDecade = (v) => Math.abs(Math.log10(v) - Math.round(Math.log10(v))) < 1e-9;
     for (const t of xTicks) {
       const p = gx(t);
+      ctx.strokeStyle = isDecade(t) ? T.grid : T.minor;
       ctx.beginPath(); ctx.moveTo(p, T_); ctx.lineTo(p, B); ctx.stroke();
     }
     for (const t of yTicks) {
       const p = gy(t);
+      ctx.strokeStyle = isDecade(t) ? T.grid : T.minor;
       ctx.beginPath(); ctx.moveTo(L, p); ctx.lineTo(L + plotW, p); ctx.stroke();
-    }
-    if (cfg.tickMode === 'auto' && scaleX === 'log' && view.xMin > 0 && view.xMax > view.xMin &&
-        plotW / (Math.log10(view.xMax) - Math.log10(view.xMin)) > 44) {
-      ctx.strokeStyle = T.minor;
-      for (let e = Math.ceil(Math.log10(view.xMin)); e <= Math.floor(Math.log10(view.xMax)); e++) {
-        for (let m = 2; m <= 9; m++) {
-          const v = m * Math.pow(10, e);
-          if (v < view.xMin || v > view.xMax) continue;
-          const p = gx(v);
-          ctx.beginPath(); ctx.moveTo(p, T_); ctx.lineTo(p, B); ctx.stroke();
-        }
-      }
-    }
-    if (cfg.tickMode === 'auto' && scaleY === 'log' && view.yMin > 0 && view.yMax > view.yMin &&
-        plotH / (Math.log10(view.yMax) - Math.log10(view.yMin)) > 44) {
-      ctx.strokeStyle = T.minor;
-      for (let e = Math.ceil(Math.log10(view.yMin)); e <= Math.floor(Math.log10(view.yMax)); e++) {
-        for (let m = 2; m <= 9; m++) {
-          const v = m * Math.pow(10, e);
-          if (v < view.yMin || v > view.yMax) continue;
-          const p = gy(v);
-          ctx.beginPath(); ctx.moveTo(L, p); ctx.lineTo(L + plotW, p); ctx.stroke();
-        }
-      }
     }
   }
 
