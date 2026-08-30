@@ -179,7 +179,7 @@ input:focus, select:focus, textarea:focus{
             <button id="cleanRedoBtn" class="btn" type="button">重做</button>
             <button id="cleanRestoreBtn" class="btn" type="button">恢复隐藏点</button>
           </div>
-          <div class="hint">处理只影响显示,原始数据(文本框、默认导出 CSV)保持不变;取消勾选即可对比原始曲线。橡皮擦改为「隐藏」数据点(灰色小点),隐藏段自动用平滑曲线补上(可关闭「擦除后平滑补线」),可撤销/重做。勾选「导出处理结果」后,导出 CSV 与图像完全一致(含补线点)。</div>
+          <div class="hint">处理只影响显示,原始数据(文本框、默认导出 CSV)保持不变;取消勾选即可对比原始曲线。橡皮擦改为「隐藏」数据点,隐藏段自动用平滑曲线补上(可关闭「擦除后平滑补线」),可撤销/重做。勾选「导出处理结果」后,导出 CSV 与图像完全一致(含补线点)。</div>
         </div>
       </details>
 
@@ -264,7 +264,7 @@ input:focus, select:focus, textarea:focus{
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
             · 每条曲线可设置线条粗细(线宽)<br>
             · 「毛刺清理」为显示层处理:中值滤波去毛刺,可调窗口/叠加滑动平均,不改原始数据<br>
-            · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点(灰色记号),隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
+            · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点,隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
             · Log 坐标会自动跳过 0 和负数<br>
@@ -793,25 +793,6 @@ function draw(ctx) {
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
       ctx.stroke();
     }
-  }
-  // 隐藏点灰色标记
-  for (const c of curves) {
-    if (!c.visible) continue;
-    const hideSet = hiddenPoints[c.id];
-    if (!hideSet || !hideSet.size) continue;
-    const idxs = Array.from(hideSet).sort((a, b) => a - b);
-    const stride = idxs.length > 4000 ? Math.ceil(idxs.length / 3000) : 1;
-    ctx.fillStyle = T.axis;
-    ctx.globalAlpha = 0.55;
-    for (let k = 0; k < idxs.length; k += stride) {
-      const i = idxs[k];
-      if (i < 0 || i >= c.xs.length) continue;
-      const x = c.xs[i], y = c.ys[i];
-      if (!isFinite(x) || !isFinite(y) || !logOk(x, scaleX) || !logOk(y, scaleY)) continue;
-      const hx = sX(x, scaleX, L, plotW), hy = sY(y, scaleY, B, plotH);
-      ctx.beginPath(); ctx.arc(hx, hy, 2, 0, Math.PI * 2); ctx.fill();
-    }
-    ctx.globalAlpha = 1;
   }
   ctx.restore();
 
@@ -1543,7 +1524,7 @@ $('eraserBtn').addEventListener('click', () => {
   eraserMode = !eraserMode;
   $('eraserBtn').setAttribute('aria-pressed', String(eraserMode));
   canvas.style.cursor = eraserMode ? 'crosshair' : (panMode ? 'grab' : 'crosshair');
-  status(eraserMode ? '橡皮擦模式:拖动框选/单击隐藏数据点(灰色记号),原始数据不变;再点一次按钮退出' : '橡皮擦已关闭');
+  status(eraserMode ? '橡皮擦模式:拖动框选/单击隐藏数据点,隐藏段自动平滑补线,原始数据不变;再点一次按钮退出' : '橡皮擦已关闭');
 });
 $('resetBtn').addEventListener('click', resetView);
 $('darkBtn').addEventListener('click', () => {
