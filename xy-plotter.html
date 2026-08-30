@@ -161,19 +161,22 @@ input:focus, select:focus, textarea:focus{
       </details>
 
       <details class="sec" id="cleanSec">
-        <summary>毛刺清理</summary>
+        <summary>毛刺清理(不改原始数据)</summary>
         <div class="sec-body">
           <div class="row">
-            <button id="cleanBtn" class="btn primary" type="button">一键去毛刺</button>
-            <button id="cleanUndoBtn" class="btn" type="button">撤销</button>
-            <button id="cleanRedoBtn" class="btn" type="button">重做</button>
+            <label class="chk"><input id="cleanEnableChk" type="checkbox"> 启用毛刺清理(仅显示层)</label>
+            <label class="chk"><input id="cleanSmoothChk" type="checkbox"> 叠加滑动平均</label>
           </div>
           <div class="row">
             <label class="f">窗口大小 <input id="cleanWindowInput" class="num" type="number" value="7" min="3" max="21" step="2"></label>
-            <label class="chk"><input id="cleanSmoothChk" type="checkbox"> 叠加滑动平均</label>
-            <label class="chk"><input id="cleanCompareChk" type="checkbox"> 前后对比</label>
+            <label class="chk"><input id="exportCleanChk" type="checkbox"> 导出处理结果</label>
           </div>
-          <div class="hint">中值滤波去除毛刺:窗口越大越平滑;勾选「叠加滑动平均」可进一步抹平小抖动。处理会直接改写曲线数据(导出数据也是清理后的),可撤销/重做(Ctrl+Z / Ctrl+Y)。「前后对比」临时显示原始数据,方便确认没有削掉真实趋势。</div>
+          <div class="row">
+            <button id="cleanUndoBtn" class="btn" type="button">撤销</button>
+            <button id="cleanRedoBtn" class="btn" type="button">重做</button>
+            <button id="cleanRestoreBtn" class="btn" type="button">恢复隐藏点</button>
+          </div>
+          <div class="hint">处理只影响显示,原始数据(文本框、导出 CSV)默认保持不变;取消勾选即可随时对比原始曲线。橡皮擦改为「隐藏」数据点(灰色小点标记),可撤销/重做(Ctrl+Z / Ctrl+Y)。勾选「导出处理结果」后,导出的 CSV 才是清理后的数据。</div>
         </div>
       </details>
 
@@ -257,8 +260,8 @@ input:focus, select:focus, textarea:focus{
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
             · 每条曲线可设置线条粗细(线宽)<br>
-            · 「毛刺清理」用中值滤波一键去毛刺,可调窗口、可叠加滑动平均、支持撤销/重做<br>
-            · 工具栏「橡皮擦」:开启后拖动框选删除数据点,单击删除最近的一个点<br>
+            · 「毛刺清理」为显示层处理:中值滤波去毛刺,可调窗口/叠加滑动平均,不改原始数据<br>
+            · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点(灰色记号),原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
             · Log 坐标会自动跳过 0 和负数<br>
@@ -309,8 +312,14 @@ let selected = [];        // [{ci, xi, dx?, dy?}] 多个选中的点;dx/dy 为�
 let zoomRect = null;
 let eraseRect = null;
 let eraserMode = false;
+let cleanEnabled = false;
+let cleanWindow = 7;
+let cleanSmooth = false;
+let exportClean = false;
+let hiddenPoints = {};   // 曲线 id -> Set(被隐藏的数据点索引)
 let undoStack = [], redoStack = [];
-let cleanupMemory = null; // [{id, rawX, rawY, cleanX, cleanY}] 前后对比用
+let procRev = 0, dataRev = 0;
+const displayCache = new Map(); // 曲线 id -> {key, xs, ys} 显示层处理缓存
 let drag = null;
 let redrawPending = false;
 const cursors = { x: { on: false, v1: null, v2: null }, y: { on: false, v1: null, v2: null } };
@@ -331,6 +340,7 @@ function parseList(text) {
 }
 
 function plot() {
+  const oldData = curves.map((c) => ({ id: c.id, xs: c.xs, ys: c.ys }));
   let total = 0;
   for (const c of curves) {
     const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
@@ -345,6 +355,20 @@ function plot() {
     c.ys = y2.slice(0, n);
     total += n;
   }
+  let hiddenNotice = false;
+  for (let i = 0; i < curves.length; i++) {
+    const c = curves[i], o = oldData[i];
+    const hs = hiddenPoints[c.id];
+    if (hs && hs.size) {
+      const same = o.xs.length === c.xs.length &&
+        o.xs.every((v, k) => v === c.xs[k]) &&
+        o.ys.every((v, k) => v === c.ys[k]);
+      if (!same) { delete hiddenPoints[c.id]; hiddenNotice = true; }
+    }
+  }
+  if (hiddenNotice) warn('数据已变化,已自动清空对应曲线的隐藏点');
+  dataRev++;
+  procRev++;
   selected = selected.filter((s) => s && Number.isInteger(s.ci) && s.ci >= 0 && s.ci < curves.length &&
     Number.isInteger(s.xi) && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
   updateSelInfo();
@@ -363,6 +387,12 @@ function clearAll() {
   }
   for (const c of curves) { c.xs = []; c.ys = []; c.visible = true; }
   selected = [];
+  hiddenPoints = {};
+  undoStack = [];
+  redoStack = [];
+  displayCache.clear();
+  dataRev++;
+  procRev++;
   resetCursorPositions();
   updateSelInfo();
   $('info').textContent = '尚未绘图';
@@ -737,10 +767,12 @@ function draw(ctx) {
   let drawnAny = false;
   for (const c of curves) {
     if (!c.visible || c.xs.length < 2) continue;
-    const stride = c.xs.length > 10000 ? Math.ceil(c.xs.length / 8000) : 1;
+    const disp = getDisplayData(c);
+    if (disp.xs.length < 2) continue;
+    const stride = disp.xs.length > 10000 ? Math.ceil(disp.xs.length / 8000) : 1;
     const pts = [];
-    for (let i = 0; i < c.xs.length; i += stride) {
-      const x = c.xs[i], y = c.ys[i];
+    for (let i = 0; i < disp.xs.length; i += stride) {
+      const x = disp.xs[i], y = disp.ys[i];
       if (!isFinite(x) || !isFinite(y)) continue;
       if (!logOk(x, scaleX) || !logOk(y, scaleY)) continue;
       pts.push([sX(x, scaleX, L, plotW), sY(y, scaleY, B, plotH)]);
@@ -750,13 +782,32 @@ function draw(ctx) {
     ctx.strokeStyle = c.color;
     ctx.lineWidth = Math.max(1, parseFloat(c.width) || 2);
     ctx.lineJoin = 'round';
-    if (cfg.smooth && isSorted(c.xs)) drawSmooth(ctx, pts);
+    if (cfg.smooth && isSorted(disp.xs)) drawSmooth(ctx, pts);
     else {
       ctx.beginPath();
       ctx.moveTo(pts[0][0], pts[0][1]);
       for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0], pts[i][1]);
       ctx.stroke();
     }
+  }
+  // 隐藏点灰色标记
+  for (const c of curves) {
+    if (!c.visible) continue;
+    const hideSet = hiddenPoints[c.id];
+    if (!hideSet || !hideSet.size) continue;
+    const idxs = Array.from(hideSet).sort((a, b) => a - b);
+    const stride = idxs.length > 4000 ? Math.ceil(idxs.length / 3000) : 1;
+    ctx.fillStyle = T.axis;
+    ctx.globalAlpha = 0.55;
+    for (let k = 0; k < idxs.length; k += stride) {
+      const i = idxs[k];
+      if (i < 0 || i >= c.xs.length) continue;
+      const x = c.xs[i], y = c.ys[i];
+      if (!isFinite(x) || !isFinite(y) || !logOk(x, scaleX) || !logOk(y, scaleY)) continue;
+      const hx = sX(x, scaleX, L, plotW), hy = sY(y, scaleY, B, plotH);
+      ctx.beginPath(); ctx.arc(hx, hy, 2, 0, Math.PI * 2); ctx.fill();
+    }
+    ctx.globalAlpha = 1;
   }
   ctx.restore();
 
@@ -836,7 +887,7 @@ function draw(ctx) {
   for (let si = 0; si < selected.length; si++) {
     const s = selected[si];
     const c = curves[s.ci];
-    if (c && c.visible && s.xi < c.xs.length) {
+    if (c && c.visible && s.xi < c.xs.length && !isHidden(s.ci, s.xi)) {
       const x = c.xs[s.xi], y = c.ys[s.xi];
       if (isFinite(x) && isFinite(y) && logOk(x, scaleX) && logOk(y, scaleY)) {
         const px = sX(x, scaleX, L, plotW), py = sY(y, scaleY, B, plotH);
@@ -1132,6 +1183,7 @@ function findNearest(px, py) {
     for (let i = 0; i < c.xs.length; i += stride) {
       const x = c.xs[i], y = c.ys[i];
       if (!isFinite(x) || !isFinite(y) || !logOk(x, scaleX) || !logOk(y, scaleY)) continue;
+      if (isHidden(ci, i)) continue;
       const dx = sX(x, scaleX, L, plotW) - px;
       const dy = sY(y, scaleY, B, plotH) - py;
       const d2 = dx * dx + dy * dy;
@@ -1329,6 +1381,7 @@ function markByValue(axis) {
   for (let i = 0; i < arr.length; i++) {
     const v = arr[i];
     if (!isFinite(v) || (log && v <= 0)) continue;
+    if (isHidden(ci, i)) continue;
     const d = Math.abs(v - value);
     if (!best || d < best.d) best = { d, i, v, other: other[i] };
   }
@@ -1486,7 +1539,7 @@ $('eraserBtn').addEventListener('click', () => {
   eraserMode = !eraserMode;
   $('eraserBtn').setAttribute('aria-pressed', String(eraserMode));
   canvas.style.cursor = eraserMode ? 'crosshair' : (panMode ? 'grab' : 'crosshair');
-  status(eraserMode ? '橡皮擦模式:拖动框选删除数据点,单击删除最近点;再点一次按钮退出' : '橡皮擦已关闭');
+  status(eraserMode ? '橡皮擦模式:拖动框选/单击隐藏数据点(灰色记号),原始数据不变;再点一次按钮退出' : '橡皮擦已关闭');
 });
 $('resetBtn').addEventListener('click', resetView);
 $('darkBtn').addEventListener('click', () => {
@@ -1495,10 +1548,35 @@ $('darkBtn').addEventListener('click', () => {
   $('darkBtn').textContent = theme === 'dark' ? '亮色模式' : '暗色模式';
   redraw();
 });
-$('cleanBtn').addEventListener('click', applyCleanup);
+$('cleanEnableChk').addEventListener('change', () => {
+  cleanEnabled = $('cleanEnableChk').checked;
+  procRev++;
+  redraw();
+  scheduleSave();
+});
+$('cleanSmoothChk').addEventListener('change', () => {
+  cleanSmooth = $('cleanSmoothChk').checked;
+  procRev++;
+  redraw();
+  scheduleSave();
+});
+$('cleanWindowInput').addEventListener('input', () => {
+  let w = Math.round(parseFloat($('cleanWindowInput').value));
+  if (!isFinite(w)) w = 7;
+  cleanWindow = Math.max(3, Math.min(21, w));
+  if (cleanWindow % 2 === 0) cleanWindow++;
+  $('cleanWindowInput').value = cleanWindow;
+  procRev++;
+  redraw();
+  scheduleSave();
+});
+$('exportCleanChk').addEventListener('change', () => {
+  exportClean = $('exportCleanChk').checked;
+  scheduleSave();
+});
 $('cleanUndoBtn').addEventListener('click', undoClean);
 $('cleanRedoBtn').addEventListener('click', redoClean);
-$('cleanCompareChk').addEventListener('change', toggleCompare);
+$('cleanRestoreBtn').addEventListener('click', restoreHidden);
 
 for (const id of ['titleInput', 'titleSize', 'titleColor', 'titleTheme',
   'xLabelInput', 'yLabelInput', 'axisFontSel',
@@ -1563,6 +1641,12 @@ function addCurve(name) {
     const idx = curves.indexOf(curve);
     if (idx >= 0) {
       curves.splice(idx, 1);
+      delete hiddenPoints[curve.id];
+      displayCache.delete(curve.id);
+      undoStack = [];
+      redoStack = [];
+      dataRev++;
+      procRev++;
       selected = selected
         .filter((s) => s.ci !== idx)
         .map((s) => (s.ci > idx ? { ci: s.ci - 1, xi: s.xi, dx: s.dx, dy: s.dy } : s));
@@ -1586,12 +1670,7 @@ function addCurve(name) {
 
 $('addCurveBtn').addEventListener('click', () => addCurve());
 
-// ---------- 毛刺清理与撤销 ----------
-function numStr(v) {
-  if (!isFinite(v)) return String(v);
-  return String(parseFloat(v.toPrecision(10)));
-}
-
+// ---------- 毛刺清理与撤销(显示层,不改原始数据) ----------
 function medianFilter(vals, w) {
   const n = vals.length;
   if (n < 3 || w < 3) return vals.slice();
@@ -1624,100 +1703,79 @@ function movingAvg(vals, w) {
   return out;
 }
 
-function captureDataState() {
-  const arr = [];
-  for (const sec of curvesBox.querySelectorAll('.curve-sec')) {
-    arr.push({ id: sec.dataset.id, xText: sec.querySelector('.xData').value, yText: sec.querySelector('.yData').value });
-  }
-  return arr;
+function isHidden(ci, xi) {
+  const c = curves[ci];
+  if (!c) return false;
+  const s = hiddenPoints[c.id];
+  return !!(s && s.has(xi));
 }
 
-function applyDataState(snap) {
-  for (const s of snap) {
-    const sec = curvesBox.querySelector('.curve-sec[data-id="' + s.id + '"]');
-    if (!sec) continue;
-    sec.querySelector('.xData').value = s.xText;
-    sec.querySelector('.yData').value = s.yText;
-    const c = curves.find((cc) => cc.id === s.id);
-    if (c) {
-      const px = parseList(s.xText), py = parseList(s.yText);
-      const x2 = px.vals.length ? px.vals : py.vals.map((_, k) => k);
-      const n = Math.min(x2.length, py.vals.length);
-      c.xs = x2.slice(0, n);
-      c.ys = py.vals.slice(0, n);
+function getDisplayData(c) {
+  const key = dataRev + ':' + procRev + ':' + c.xs.length;
+  const hit = displayCache.get(c.id);
+  if (hit && hit.key === key) return hit;
+  const hideSet = hiddenPoints[c.id];
+  let xs = c.xs, ys = c.ys;
+  if (hideSet && hideSet.size) {
+    xs = []; ys = [];
+    for (let i = 0; i < c.xs.length; i++) {
+      if (hideSet.has(i)) continue;
+      xs.push(c.xs[i]); ys.push(c.ys[i]);
     }
   }
-  selected = selected.filter((s) => s && s.ci >= 0 && s.ci < curves.length && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
-  updateSelInfo();
+  if (cleanEnabled && ys.length >= 3) {
+    ys = medianFilter(ys, cleanWindow);
+    if (cleanSmooth) ys = movingAvg(ys, cleanWindow);
+  }
+  const out = { xs, ys, key };
+  displayCache.set(c.id, out);
+  return out;
+}
+
+function snapHidden() {
+  const out = {};
+  for (const id of Object.keys(hiddenPoints)) out[id] = Array.from(hiddenPoints[id]);
+  return out;
+}
+
+function applyHidden(snap) {
+  hiddenPoints = {};
+  for (const id of Object.keys(snap)) hiddenPoints[id] = new Set(snap[id]);
+  procRev++;
   redraw();
   scheduleSave();
 }
 
 function pushUndo() {
-  undoStack.push(captureDataState());
+  undoStack.push(snapHidden());
   if (undoStack.length > 50) undoStack.shift();
   redoStack = [];
 }
 
 function undoClean() {
   if (!undoStack.length) { warn('没有可撤销的操作'); return; }
-  redoStack.push(captureDataState());
-  applyDataState(undoStack.pop());
+  redoStack.push(snapHidden());
+  applyHidden(undoStack.pop());
   status('已撤销');
 }
 
 function redoClean() {
   if (!redoStack.length) { warn('没有可重做的操作'); return; }
-  undoStack.push(captureDataState());
-  applyDataState(redoStack.pop());
+  undoStack.push(snapHidden());
+  applyHidden(redoStack.pop());
   status('已重做');
 }
 
-function applyCleanup() {
-  let w = Math.round(parseFloat($('cleanWindowInput').value));
-  if (!isFinite(w)) w = 7;
-  w = Math.max(3, Math.min(21, w));
-  if (w % 2 === 0) w++;
-  $('cleanWindowInput').value = w;
-  const doSmooth = $('cleanSmoothChk').checked;
-  const edits = [];
-  const mem = [];
-  let touched = 0;
-  for (const sec of curvesBox.querySelectorAll('.curve-sec')) {
-    const id = sec.dataset.id;
-    const rawX = sec.querySelector('.xData').value;
-    const rawY = sec.querySelector('.yData').value;
-    const px = parseList(rawX), py = parseList(rawY);
-    if (!py.vals.length) continue;
-    const xs = px.vals.length ? px.vals.slice() : py.vals.map((_, k) => k);
-    const ys = py.vals.slice();
-    const n = Math.min(xs.length, ys.length);
-    let fy = ys.slice(0, n);
-    fy = medianFilter(fy, w);
-    if (doSmooth) fy = movingAvg(fy, w);
-    const cleanX = xs.slice(0, n).map(numStr).join(' ');
-    const cleanY = fy.map(numStr).join(' ');
-    edits.push({ id, xText: cleanX, yText: cleanY });
-    mem.push({ id, rawX, rawY, cleanX, cleanY });
-    touched++;
-  }
-  if (!touched) { warn('没有可清理的数据'); return; }
+function restoreHidden() {
+  let total = 0;
+  for (const id of Object.keys(hiddenPoints)) total += hiddenPoints[id].size;
+  if (!total) { warn('没有隐藏的数据点'); return; }
   pushUndo();
-  applyDataState(edits);
-  cleanupMemory = mem;
-  $('cleanCompareChk').checked = false;
-  status('已去毛刺 ' + touched + ' 条曲线(窗口 ' + w + (doSmooth ? ' + 滑动平均' : '') + ')');
-}
-
-function toggleCompare() {
-  if (!cleanupMemory || !cleanupMemory.length) {
-    $('cleanCompareChk').checked = false;
-    warn('请先执行「一键去毛刺」');
-    return;
-  }
-  const showRaw = $('cleanCompareChk').checked;
-  const edits = cleanupMemory.map((m) => ({ id: m.id, xText: showRaw ? m.rawX : m.cleanX, yText: showRaw ? m.rawY : m.cleanY }));
-  applyDataState(edits);
+  hiddenPoints = {};
+  procRev++;
+  redraw();
+  scheduleSave();
+  status('已恢复 ' + total + ' 个隐藏点');
 }
 
 function performErase(px1, py1, px2, py2, clickX, clickY) {
@@ -1728,7 +1786,7 @@ function performErase(px1, py1, px2, py2, clickX, clickY) {
   let total = 0;
   if (wpx <= 5 && hpx <= 5) {
     const near = findNearest(clickX, clickY);
-    if (near) { plan.push({ ci: near.ci, set: new Set([near.xi]) }); total = 1; }
+    if (near) { plan.push({ cid: curves[near.ci].id, set: new Set([near.xi]) }); total = 1; }
   } else {
     const dxLo = invX(Math.min(px1, px2), cfg.xScale, rect.L, rect.W);
     const dxHi = invX(Math.max(px1, px2), cfg.xScale, rect.L, rect.W);
@@ -1739,35 +1797,22 @@ function performErase(px1, py1, px2, py2, clickX, clickY) {
       if (!c.xs.length) continue;
       const set = new Set();
       for (let i = 0; i < c.xs.length; i++) {
+        if (isHidden(ci, i)) continue;
         if (c.xs[i] >= dxLo && c.xs[i] <= dxHi && c.ys[i] >= dyLo && c.ys[i] <= dyHi) set.add(i);
       }
-      if (set.size) { plan.push({ ci, set }); total += set.size; }
+      if (set.size) { plan.push({ cid: c.id, set }); total += set.size; }
     }
   }
-  if (!total) { warn('没有删除任何数据点'); return; }
+  if (!total) { warn('没有可隐藏的数据点'); return; }
   pushUndo();
   for (const p of plan) {
-    const c = curves[p.ci];
-    const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
-    if (!sec) continue;
-    const xToks = String(sec.querySelector('.xData').value).split(/[\s,;]+/).filter((t) => t !== '');
-    const yToks = String(sec.querySelector('.yData').value).split(/[\s,;]+/).filter((t) => t !== '');
-    const nx = [], ny = [];
-    for (let i = 0; i < c.xs.length; i++) {
-      if (p.set.has(i)) continue;
-      nx.push(xToks[i] !== undefined ? xToks[i] : numStr(c.xs[i]));
-      ny.push(yToks[i] !== undefined ? yToks[i] : numStr(c.ys[i]));
-    }
-    c.xs = nx.map(Number);
-    c.ys = ny.map(Number);
-    sec.querySelector('.xData').value = nx.join(' ');
-    sec.querySelector('.yData').value = ny.join(' ');
+    if (!hiddenPoints[p.cid]) hiddenPoints[p.cid] = new Set();
+    for (const i of p.set) hiddenPoints[p.cid].add(i);
   }
-  selected = selected.filter((s) => s && s.ci >= 0 && s.ci < curves.length && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
-  updateSelInfo();
+  procRev++;
   redraw();
   scheduleSave();
-  status('橡皮擦:删除 ' + total + ' 个数据点(Ctrl+Z 可撤销)');
+  status('橡皮擦:隐藏 ' + total + ' 个数据点(原始数据未改动,Ctrl+Z 可恢复)');
 }
 
 // ---------- 工具与初始化 ----------
@@ -1805,8 +1850,9 @@ function exportData() {
   rows.push('曲线,x,y');
   let dataCount = 0;
   for (const c of valid) {
+    const disp = exportClean ? getDisplayData(c) : c;
     const name = csvField(c.name);
-    for (let i = 0; i < c.xs.length; i++) { rows.push(name + ',' + c.xs[i] + ',' + c.ys[i]); dataCount++; }
+    for (let i = 0; i < disp.xs.length; i++) { rows.push(name + ',' + disp.xs[i] + ',' + disp.ys[i]); dataCount++; }
   }
   const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
@@ -1910,10 +1956,10 @@ function loadDataFromFile(file) {
       if (wi) wi.value = c.width;
     }
   }
-  cleanupMemory = null;
+  hiddenPoints = {};
   undoStack = [];
   redoStack = [];
-  $('cleanCompareChk').checked = false;
+  displayCache.clear();
   plot();
     selected = [];
     for (const m of markers) {
@@ -1952,7 +1998,7 @@ function saveState() {
         xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
         ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
         grid: $('gridChk').checked, smooth: $('smoothSel').value, markerArrow: $('markerArrowChk').checked,
-        cleanWindow: $('cleanWindowInput').value, cleanSmooth: $('cleanSmoothChk').checked
+        cleanEnabled: cleanEnabled, cleanWindow: cleanWindow, cleanSmooth: cleanSmooth, exportClean: exportClean
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
@@ -1966,6 +2012,7 @@ function saveState() {
         };
       }),
       selected: selected.map((s) => ({ ci: s.ci, xi: s.xi, dx: s.dx, dy: s.dy })),
+      hidden: snapHidden(),
       cursors: {
         x: { on: cursors.x.on, v1: cursors.x.v1, v2: cursors.x.v2 },
         y: { on: cursors.y.on, v1: cursors.y.v1, v2: cursors.y.v2 }
@@ -1992,9 +2039,14 @@ function loadState() {
     set('tickInput', s.ticks); set('tickModeSel', s.tickMode); set('tickStep', s.tickStep); set('customTicks', s.customTicks);
     setChk('gridChk', s.grid); set('smoothSel', s.smooth);
     setChk('markerArrowChk', s.markerArrow);
-    set('cleanWindowInput', s.cleanWindow); setChk('cleanSmoothChk', s.cleanSmooth);
-    cleanupMemory = null; undoStack = []; redoStack = [];
-    $('cleanCompareChk').checked = false;
+    if (isFinite(parseFloat(s.cleanWindow))) {
+      cleanWindow = Math.max(3, Math.min(21, Math.round(parseFloat(s.cleanWindow))));
+      if (cleanWindow % 2 === 0) cleanWindow++;
+    }
+    cleanSmooth = !!s.cleanSmooth;
+    cleanEnabled = !!s.cleanEnabled;
+    exportClean = !!s.exportClean;
+    hiddenPoints = {}; undoStack = []; redoStack = [];
   }
   if (state && state.labelPos) {
     if (state.labelPos.title) labelPos.title = state.labelPos.title;
@@ -2014,6 +2066,7 @@ function loadState() {
     if (isFinite(v.yMin)) view.yMin = v.yMin;
     if (isFinite(v.yMax)) view.yMax = v.yMax;
   }
+  displayCache.clear();
   while (curves.length) {
     const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
     if (sec) sec.remove();
@@ -2041,6 +2094,17 @@ function loadState() {
   }
   syncTickModeUI();
   if (hasData) plot(); else redraw();
+  if (state && state.hidden) {
+    hiddenPoints = {};
+    for (const id of Object.keys(state.hidden)) {
+      if (Array.isArray(state.hidden[id])) hiddenPoints[id] = new Set(state.hidden[id].filter((v) => isFinite(v)));
+    }
+  }
+  $('cleanEnableChk').checked = cleanEnabled;
+  $('cleanSmoothChk').checked = cleanSmooth;
+  $('cleanWindowInput').value = cleanWindow;
+  $('exportCleanChk').checked = exportClean;
+  procRev++;
   if (state && state.cursors) {
     const cx = state.cursors.x, cy = state.cursors.y;
     if (cx) { cursors.x.on = !!cx.on; cursors.x.v1 = isNum(cx.v1) ? cx.v1 : null; cursors.x.v2 = isNum(cx.v2) ? cx.v2 : null; }
