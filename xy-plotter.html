@@ -182,7 +182,7 @@ input:focus, select:focus, textarea:focus{
             <label class="chk"><input id="cursorXChk" type="checkbox"> X 光标(竖线,测 ΔX)</label>
             <label class="chk"><input id="cursorYChk" type="checkbox"> Y 光标(横线,测 ΔY)</label>
           </div>
-          <div class="hint">开启后在绘图区出现两条虚线光标,直接拖动即可测量两点间差值;读数显示在绘图区左上角,并带有 ΔX / ΔY 箭头标记。X / Y 可单独或同时开启。</div>
+          <div class="hint">开启后在绘图区出现两条虚线光标,直接拖动即可测量两点间差值;读数框默认在绘图区左上角,可按住拖动调整位置,并带有 ΔX / ΔY 箭头标记。X / Y 可单独或同时开启。</div>
         </div>
       </details>
 
@@ -234,6 +234,7 @@ input:focus, select:focus, textarea:focus{
             · 鼠标悬停数据点显示精确坐标<br>
             · 单击数据点可添加/取消标记,支持同时标记多个点<br>
             · 勾选「测量光标」中的 X / Y 光标,拖动虚线即可测量两点间 ΔX / ΔY,可同时开启<br>
+            · 光标读数框可拖动;重置视图(双击或按钮)只重置缩放,不会删除标记与光标<br>
             · 可输入 X / Y 值在指定曲线上精确定位标记点<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
@@ -276,6 +277,8 @@ const labelPos = {
   yAxis: { t: 0.5, d: 18 }
 };
 let labelRects = {};
+let readoutPos = { tx: 0.03, ty: 0.05 };
+let readoutRect = null;
 let cssW = 0, cssH = 0, dpr = 1;
 const view = { xMin: 0, xMax: 1, yMin: 0, yMax: 1, autoX: true, autoY: true };
 let theme = 'light';
@@ -307,9 +310,9 @@ function plot() {
   for (const c of curves) {
     const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
     if (!sec) { c.xs = []; c.ys = []; continue; }
-    const px = parseList(sec.querySelector('.xData').value);
-    const py = parseList(sec.querySelector('.yData').value);
-    if (!py.vals.length) { c.xs = []; c.ys = []; continue; }
+  const px = parseList(sec.querySelector('.xData').value);
+  const py = parseList(sec.querySelector('.yData').value);
+  if (!py.vals.length) { c.xs = []; c.ys = []; continue; }
     const x2 = px.vals.length ? px.vals.slice() : py.vals.map((_, k) => k);
     const y2 = py.vals.slice();
     const n = Math.min(x2.length, y2.length);
@@ -317,6 +320,9 @@ function plot() {
     c.ys = y2.slice(0, n);
     total += n;
   }
+  selected = selected.filter((s) => s && Number.isInteger(s.ci) && s.ci >= 0 && s.ci < curves.length &&
+    Number.isInteger(s.xi) && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
+  updateSelInfo();
   const valid = curves.filter((c) => c.xs.length >= 2);
   if (!valid.length) { warn('至少需要一条包含 2 个以上有效数据点的曲线'); return; }
   $('info').textContent = curves.map((c) => c.name + ':' + c.xs.length + '点').join('   ');
@@ -331,6 +337,9 @@ function clearAll() {
     sec.querySelector('.yData').value = '';
   }
   for (const c of curves) { c.xs = []; c.ys = []; c.visible = true; }
+  selected = [];
+  resetCursorPositions();
+  updateSelInfo();
   $('info').textContent = '尚未绘图';
   resetView();
   scheduleSave();
@@ -418,18 +427,19 @@ function computeView(cfg) {
 
 function resetView() {
   view.autoX = true; view.autoY = true;
-  selected = [];
-  resetCursorPositions();
-  $('selInfo').textContent = '点击数据点可添加标记';
   redraw();
 }
 
-function syncRangeInputs() {
-  view.autoX = false; view.autoY = false;
+function clampCursorsToView() {
   if (isNum(cursors.x.v1)) cursors.x.v1 = clampNum(cursors.x.v1, view.xMin, view.xMax);
   if (isNum(cursors.x.v2)) cursors.x.v2 = clampNum(cursors.x.v2, view.xMin, view.xMax);
   if (isNum(cursors.y.v1)) cursors.y.v1 = clampNum(cursors.y.v1, view.yMin, view.yMax);
   if (isNum(cursors.y.v2)) cursors.y.v2 = clampNum(cursors.y.v2, view.yMin, view.yMax);
+}
+
+function syncRangeInputs() {
+  view.autoX = false; view.autoY = false;
+  clampCursorsToView();
 }
 
 // ---------- 刻度与映射 ----------
@@ -898,6 +908,8 @@ function cursorHit(px, py) {
 
 function drawCursors(ctx, cfg, L, T_, B, plotW, plotH) {
   ensureCursorPositions();
+  clampCursorsToView();
+  readoutRect = null;
   const scaleX = cfg.xScale, scaleY = cfg.yScale;
   const T = THEMES[theme];
   const XCOL = '#2563eb', YCOL = '#d97706';
@@ -981,7 +993,9 @@ function drawCursors(ctx, cfg, L, T_, B, plotW, plotH) {
     let wmax = 0;
     for (const ln of readLines) wmax = Math.max(wmax, ctx.measureText(ln).width);
     const bw = wmax + 14, bh = readLines.length * 15 + 8;
-    const bx = L + 8, by = T_ + 8;
+    const bx = clampNum(L + readoutPos.tx * plotW, L, L + plotW - bw);
+    const by = clampNum(T_ + readoutPos.ty * plotH, T_, B - bh);
+    readoutRect = { x: bx, y: by, w: bw, h: bh };
     ctx.globalAlpha = 0.9;
     ctx.fillStyle = T.bg;
     ctx.fillRect(bx, by, bw, bh);
@@ -1058,6 +1072,16 @@ function updateCursorDrag(p) {
   redraw();
 }
 
+function updateReadoutDrag(p) {
+  const cfg = readConfig();
+  const rect = getPlotRect(cfg);
+  const offx = isFinite(drag.offx) ? drag.offx : 0;
+  const offy = isFinite(drag.offy) ? drag.offy : 0;
+  readoutPos.tx = clampNum((p.x - offx - rect.L) / rect.W, 0, 1);
+  readoutPos.ty = clampNum((p.y - offy - rect.T) / rect.H, 0, 1);
+  redraw();
+}
+
 function findNearest(px, py) {
   const cfg = readConfig();
   const scaleX = cfg.xScale, scaleY = cfg.yScale;
@@ -1090,6 +1114,7 @@ canvas.addEventListener('mousemove', (e) => {
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else if (drag.mode === 'cursor') { updateCursorDrag(p); }
+    else if (drag.mode === 'readout') { updateReadoutDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
     return;
   }
@@ -1116,9 +1141,14 @@ canvas.addEventListener('mousemove', (e) => {
     const rect = getPlotRect(cfg);
     $('status').textContent = 'x = ' + fmt(invX(p.x, cfg.xScale, rect.L, rect.W)) + '  y = ' + fmt(invY(p.y, cfg.yScale, rect.B, rect.H));
   }
-  const ch = cursorHit(p.x, p.y);
-  if (ch) canvas.style.cursor = ch.axis === 'x' ? 'ew-resize' : 'ns-resize';
-  else canvas.style.cursor = panMode || spaceDown ? 'grab' : 'crosshair';
+  if (readoutRect && p.x >= readoutRect.x && p.x <= readoutRect.x + readoutRect.w &&
+      p.y >= readoutRect.y && p.y <= readoutRect.y + readoutRect.h) {
+    canvas.style.cursor = 'move';
+  } else {
+    const ch = cursorHit(p.x, p.y);
+    if (ch) canvas.style.cursor = ch.axis === 'x' ? 'ew-resize' : 'ns-resize';
+    else canvas.style.cursor = panMode || spaceDown ? 'grab' : 'crosshair';
+  }
   redraw();
 });
 
@@ -1156,6 +1186,12 @@ canvas.addEventListener('mousedown', (e) => {
       return;
     }
   }
+  if (readoutRect && p.x >= readoutRect.x && p.x <= readoutRect.x + readoutRect.w &&
+      p.y >= readoutRect.y && p.y <= readoutRect.y + readoutRect.h) {
+    drag = { mode: 'readout', sx: p.x, sy: p.y, offx: p.x - readoutRect.x, offy: p.y - readoutRect.y };
+    canvas.style.cursor = 'move';
+    return;
+  }
   const chit = cursorHit(p.x, p.y);
   if (chit) {
     drag = { mode: 'cursor', axis: chit.axis, key: chit.key, sx: p.x, sy: p.y };
@@ -1181,6 +1217,7 @@ window.addEventListener('mousemove', (e) => {
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else if (drag.mode === 'cursor') { updateCursorDrag(p); }
+    else if (drag.mode === 'readout') { updateReadoutDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
   }
 });
@@ -1265,7 +1302,7 @@ function markByValue(axis) {
 
 window.addEventListener('mouseup', (e) => {
   if (!drag) return;
-  if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'cursor') {
+  if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'cursor' || drag.mode === 'readout') {
     saveState();
   } else if (drag.mode === 'zoom') {
     const w = zoomRect ? Math.abs(zoomRect.x2 - zoomRect.x1) : 0;
@@ -1461,9 +1498,15 @@ function addCurve(name) {
   });
   sec.querySelector('.btn-sm').addEventListener('click', () => {
     const idx = curves.indexOf(curve);
-    if (idx >= 0) curves.splice(idx, 1);
+    if (idx >= 0) {
+      curves.splice(idx, 1);
+      selected = selected
+        .filter((s) => s.ci !== idx)
+        .map((s) => (s.ci > idx ? { ci: s.ci - 1, xi: s.xi, dx: s.dx, dy: s.dy } : s));
+    }
     sec.remove();
     refreshMarkerCurveSel();
+    updateSelInfo();
     resetView();
     scheduleSave();
   });
@@ -1661,6 +1704,7 @@ function saveState() {
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
+      readoutPos: readoutPos,
       curves: curves.map((c, i) => {
         const sec = secs[i];
         return {
@@ -1701,6 +1745,11 @@ function loadState() {
     if (state.labelPos.title) labelPos.title = state.labelPos.title;
     if (state.labelPos.xAxis) labelPos.xAxis = state.labelPos.xAxis;
     if (state.labelPos.yAxis) labelPos.yAxis = state.labelPos.yAxis;
+  }
+  if (state && state.readoutPos) {
+    const rp = state.readoutPos;
+    if (isFinite(rp.tx)) readoutPos.tx = clampNum(rp.tx, 0, 1);
+    if (isFinite(rp.ty)) readoutPos.ty = clampNum(rp.ty, 0, 1);
   }
   if (state && state.view) {
     const v = state.view;
