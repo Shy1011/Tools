@@ -267,6 +267,7 @@ input:focus, select:focus, textarea:focus{
             · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点,隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
+            · 导出 CSV 为英文表头的宽表格式:每条曲线 X、Y 两列并排(4 条曲线即 8 列),可直接用 Excel 打开;旧版中文长格式 CSV 仍可载入<br>
             · Log 坐标会自动跳过 0 和负数<br>
             · Log 坐标范围较小时会自动细分刻度并标注(如 0.1–0.7 会标出 0.1、0.2、…、0.7)
           </div>
@@ -1869,36 +1870,46 @@ function exportData() {
   const valid = curves.filter((c) => c.xs.length);
   if (!valid.length) { warn('没有可导出的数据'); return; }
   const rows = [
-    ['标题', $('titleInput').value.trim()],
-    ['X轴', $('xLabelInput').value.trim()],
-    ['Y轴', $('yLabelInput').value.trim()],
-    ['标题字号', $('titleSize').value],
-    ['X轴字号', $('xLabelSize').value],
-    ['Y轴字号', $('yLabelSize').value]
+    ['Title', $('titleInput').value.trim()],
+    ['X Axis', $('xLabelInput').value.trim()],
+    ['Y Axis', $('yLabelInput').value.trim()],
+    ['Title Size', $('titleSize').value],
+    ['X Axis Size', $('xLabelSize').value],
+    ['Y Axis Size', $('yLabelSize').value]
   ].map((r) => r.map(csvField).join(','));
-  for (const c of valid) rows.push('曲线粗细,' + csvField(c.name) + ',' + (c.width || 2));
+  for (const c of valid) rows.push('Line Width,' + csvField(c.name) + ',' + (c.width || 2));
   if (selected.length) {
     rows.push('');
-    rows.push('标记,曲线,x,y,dx,dy');
+    rows.push('Marker,Curve,X,Y,DX,DY');
     for (const s of selected) {
       const c = curves[s.ci];
       if (!c || s.xi >= c.xs.length) continue;
-      rows.push('标记,' + csvField(c.name) + ',' + c.xs[s.xi] + ',' + c.ys[s.xi] +
+      rows.push('Marker,' + csvField(c.name) + ',' + c.xs[s.xi] + ',' + c.ys[s.xi] +
         ',' + (isFinite(s.dx) ? s.dx : '') + ',' + (isFinite(s.dy) ? s.dy : ''));
     }
   }
   rows.push('');
-  rows.push('曲线,x,y');
-  let dataCount = 0;
+  const heads = [];
   for (const c of valid) {
-    const disp = exportClean ? getDisplayData(c, readConfig().xScale === 'log') : c;
-    const name = csvField(c.name);
-    for (let i = 0; i < disp.xs.length; i++) { rows.push(name + ',' + disp.xs[i] + ',' + disp.ys[i]); dataCount++; }
+    heads.push(csvField(c.name) + ' X');
+    heads.push(csvField(c.name) + ' Y');
+  }
+  rows.push(heads.join(','));
+  const dispAll = valid.map((c) => (exportClean ? getDisplayData(c, readConfig().xScale === 'log') : c));
+  const maxN = Math.max.apply(null, dispAll.map((d) => d.xs.length));
+  let dataCount = 0;
+  for (let i = 0; i < maxN; i++) {
+    const cells = [];
+    for (const d of dispAll) {
+      if (i < d.xs.length) { cells.push(d.xs[i], d.ys[i]); dataCount++; }
+      else cells.push('', '');
+    }
+    rows.push(cells.join(','));
   }
   const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = '曲线数据.csv';
+  a.download = 'curve-data.csv';
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
   status('已导出 ' + valid.length + ' 条曲线,共 ' + dataCount + ' 行数据');
@@ -1934,13 +1945,17 @@ function parseCSV(text) {
 function loadDataFromFile(file) {
   file.text().then((text) => {
     const rows = parseCSV(text);
-    let dataStart = -1;
+    let dataStart = -1, wide = false;
     for (let i = 0; i < rows.length; i++) {
-      if (String(rows[i][0]).trim().toLowerCase() === '曲线' &&
-          String(rows[i][1]).trim().toLowerCase() === 'x') { dataStart = i; break; }
+      const r = rows[i];
+      if (!r || !r.length) continue;
+      const a = String(r[0]).trim().toLowerCase();
+      const b = String(r[1] || '').trim().toLowerCase();
+      if ((a === '曲线' || a === 'curve') && b === 'x') { dataStart = i; break; }
+      if (a.endsWith(' x') && b.endsWith(' y')) { dataStart = i; wide = true; break; }
     }
     if (dataStart < 0) {
-      warn('CSV 格式不正确:未找到 曲线,x,y 数据表头');
+      warn('CSV 格式不正确:未找到数据表头(旧格式 曲线,x,y 或宽表 X/Y 列)');
       return;
     }
     const meta = {}, metaWidths = {}, markers = [];
@@ -1948,8 +1963,10 @@ function loadDataFromFile(file) {
       const r = rows[i];
       if (!r || !r.length) continue;
       const key = String(r[0]).trim();
-      if ((key === '曲线线宽' || key === '曲线粗细') && r.length >= 3) metaWidths[String(r[1]).trim()] = parseFloat(r[2]);
-      else if (key === '标记' && r.length >= 6 && !(String(r[1]).trim() === '曲线' && String(r[2]).trim() === 'x'))
+      if ((key === '曲线线宽' || key === '曲线粗细' || key === 'Line Width') && r.length >= 3)
+        metaWidths[String(r[1]).trim()] = parseFloat(r[2]);
+      else if ((key === '标记' || key === 'Marker') && r.length >= 6 &&
+               !(String(r[1]).trim().toLowerCase() === 'curve' && String(r[2]).trim().toLowerCase() === 'x'))
         markers.push({
           name: String(r[1]).trim(), x: Number(r[2]), y: Number(r[3]),
           dx: r[4] === '' ? NaN : Number(r[4]), dy: r[5] === '' ? NaN : Number(r[5])
@@ -1957,29 +1974,53 @@ function loadDataFromFile(file) {
       else if (r.length >= 2) meta[key] = String(r[1]).trim();
     }
     const groups = {}, order = [];
-    for (let i = dataStart + 1; i < rows.length; i++) {
-      const r = rows[i];
-      if (!r || r.length < 3) continue;
-      const x = Number(r[1]), y = Number(r[2]);
-      if (!isFinite(x) || !isFinite(y)) continue;
-      const name = String(r[0]).trim() || '曲线';
-      if (!groups[name]) { groups[name] = { xs: [], ys: [] }; order.push(name); }
-      groups[name].xs.push(x);
-      groups[name].ys.push(y);
+    if (wide) {
+      const head = rows[dataStart];
+      const names = [];
+      for (let k = 0; k + 1 < head.length; k += 2) {
+        const nx = String(head[k]).trim();
+        if (!nx.toLowerCase().endsWith(' x')) break;
+        names.push(nx.slice(0, -2).trim());
+      }
+      for (let i = dataStart + 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || !r.length) continue;
+        for (let k = 0; k < names.length; k++) {
+          const xv = String(r[k * 2] === undefined ? '' : r[k * 2]).trim();
+          const yv = String(r[k * 2 + 1] === undefined ? '' : r[k * 2 + 1]).trim();
+          if (xv === '' || yv === '') continue;
+          const x = Number(xv), y = Number(yv);
+          if (!isFinite(x) || !isFinite(y)) continue;
+          const name = names[k] || ('Curve ' + (k + 1));
+          if (!groups[name]) { groups[name] = { xs: [], ys: [] }; order.push(name); }
+          groups[name].xs.push(x);
+          groups[name].ys.push(y);
+        }
+      }
+    } else {
+      for (let i = dataStart + 1; i < rows.length; i++) {
+        const r = rows[i];
+        if (!r || r.length < 3) continue;
+        const x = Number(r[1]), y = Number(r[2]);
+        if (!isFinite(x) || !isFinite(y)) continue;
+        const name = String(r[0]).trim() || '曲线';
+        if (!groups[name]) { groups[name] = { xs: [], ys: [] }; order.push(name); }
+        groups[name].xs.push(x);
+        groups[name].ys.push(y);
+      }
     }
     if (!order.length) { warn('文件中没有有效数据行'); return; }
-    const setMeta = (id, key) => {
-      if (meta[key] !== undefined) {
-        const el = $(id);
-        if (el) el.value = meta[key];
-      }
+    const getMeta = (cn, en) => (meta[cn] !== undefined ? meta[cn] : meta[en]);
+    const setMeta = (id, cn, en) => {
+      const v = getMeta(cn, en);
+      if (v !== undefined) { const el = $(id); if (el) el.value = v; }
     };
-    setMeta('titleInput', '标题');
-    setMeta('xLabelInput', 'X轴');
-    setMeta('yLabelInput', 'Y轴');
-    setMeta('titleSize', '标题字号');
-    setMeta('xLabelSize', 'X轴字号');
-    setMeta('yLabelSize', 'Y轴字号');
+    setMeta('titleInput', '标题', 'Title');
+    setMeta('xLabelInput', 'X轴', 'X Axis');
+    setMeta('yLabelInput', 'Y轴', 'Y Axis');
+    setMeta('titleSize', '标题字号', 'Title Size');
+    setMeta('xLabelSize', 'X轴字号', 'X Axis Size');
+    setMeta('yLabelSize', 'Y轴字号', 'Y Axis Size');
     while (curves.length) {
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
       if (sec) sec.remove();
