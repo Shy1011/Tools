@@ -110,6 +110,7 @@ input:focus, select:focus, textarea:focus{
     <button id="panBtn" class="btn" type="button">平移</button>
     <button id="eraserBtn" class="btn" type="button">橡皮擦</button>
     <button id="resetBtn" class="btn" type="button">重置视图</button>
+    <button id="modeBadgeBtn" class="btn" type="button" aria-pressed="true">轴模式:显示</button>
     <button id="darkBtn" class="btn" type="button">暗色模式</button>
   </div>
 
@@ -321,6 +322,7 @@ let cleanWindow = 7;
 let cleanSmooth = false;
 let fillGaps = true;
 let exportClean = false;
+let modeBadgeOn = true;
 let hiddenPoints = {};   // 曲线 id -> Set(被隐藏的数据点索引)
 let undoStack = [], redoStack = [];
 let procRev = 0, dataRev = 0;
@@ -503,6 +505,10 @@ function syncRangeInputs() {
 }
 
 // ---------- 刻度与映射 ----------
+function scaleModeName(v) {
+  return v === 'log' ? 'LOG10' : 'Linear';
+}
+
 function fmt(v) {
   if (!isFinite(v)) return '';
   if (v === 0) return '0';
@@ -831,6 +837,23 @@ function draw(ctx) {
       ctx.fillText(c.name, lx + 22, y);
       legendItems.push({ x: lx, y: ly + k * 18, w: lw, h: 18, ci: curves.indexOf(c) });
     });
+  }
+
+  // 左下角小字:当前坐标轴模式(低调显示;可用「轴模式」按钮隐藏)
+  if (modeBadgeOn) {
+    const modeText = 'X:' + scaleModeName(scaleX) + '  Y:' + scaleModeName(scaleY);
+    ctx.font = '10px ' + MONO;
+    const mtW = ctx.measureText(modeText).width;
+    const mtX = L + 8;
+    const mtY = B - 7 - 16;
+    ctx.globalAlpha = 0.45;
+    ctx.fillStyle = T.bg;
+    ctx.fillRect(mtX - 4, mtY, mtW + 8, 16);
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = T.axis;
+    ctx.textAlign = 'left';
+    ctx.textBaseline = 'middle';
+    ctx.fillText(modeText, mtX, mtY + 8);
   }
 
   if (zoomRect) {
@@ -1534,6 +1557,20 @@ $('darkBtn').addEventListener('click', () => {
   $('darkBtn').textContent = theme === 'dark' ? '亮色模式' : '暗色模式';
   redraw();
 });
+function syncModeBadgeUI() {
+  const b = $('modeBadgeBtn');
+  if (!b) return;
+  b.setAttribute('aria-pressed', String(modeBadgeOn));
+  b.textContent = modeBadgeOn ? '轴模式:显示' : '轴模式:隐藏';
+}
+$('modeBadgeBtn').addEventListener('click', () => {
+  modeBadgeOn = !modeBadgeOn;
+  syncModeBadgeUI();
+  redraw();
+  scheduleSave();
+  status(modeBadgeOn ? '坐标轴模式标识:显示' : '坐标轴模式标识:已隐藏');
+});
+syncModeBadgeUI();
 $('cleanEnableChk').addEventListener('change', () => {
   cleanEnabled = $('cleanEnableChk').checked;
   procRev++;
@@ -1877,6 +1914,9 @@ function exportData() {
     ['X Axis Size', $('xLabelSize').value],
     ['Y Axis Size', $('yLabelSize').value]
   ].map((r) => r.map(csvField).join(','));
+  const cfgExport = readConfig();
+  rows.push('X Axis Mode,' + scaleModeName(cfgExport.xScale));
+  rows.push('Y Axis Mode,' + scaleModeName(cfgExport.yScale));
   for (const c of valid) rows.push('Line Width,' + csvField(c.name) + ',' + (c.width || 2));
   if (selected.length) {
     rows.push('');
@@ -2021,6 +2061,16 @@ function loadDataFromFile(file) {
     setMeta('titleSize', '标题字号', 'Title Size');
     setMeta('xLabelSize', 'X轴字号', 'X Axis Size');
     setMeta('yLabelSize', 'Y轴字号', 'Y Axis Size');
+    const setAxisMode = (id, key) => {
+      const v = meta[key];
+      if (v === undefined) return;
+      const el = $(id);
+      if (!el) return;
+      const mv = String(v).trim().toLowerCase();
+      el.value = mv.startsWith('log') ? 'log' : (mv.startsWith('lin') ? 'linear' : el.value);
+    };
+    setAxisMode('xScaleSel', 'X Axis Mode');
+    setAxisMode('yScaleSel', 'Y Axis Mode');
     while (curves.length) {
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
       if (sec) sec.remove();
@@ -2081,7 +2131,7 @@ function saveState() {
         ticks: $('tickInput').value, tickMode: $('tickModeSel').value, tickStep: $('tickStep').value, customTicks: $('customTicks').value,
         grid: $('gridChk').checked, smooth: $('smoothSel').value, markerArrow: $('markerArrowChk').checked,
         cleanEnabled: cleanEnabled, cleanWindow: cleanWindow, cleanSmooth: cleanSmooth,
-        fillGaps: fillGaps, exportClean: exportClean
+        fillGaps: fillGaps, exportClean: exportClean, modeBadge: modeBadgeOn
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
@@ -2130,6 +2180,7 @@ function loadState() {
     cleanEnabled = !!s.cleanEnabled;
     fillGaps = s.fillGaps !== false;
     exportClean = !!s.exportClean;
+    modeBadgeOn = s.modeBadge !== false;
     hiddenPoints = {}; undoStack = []; redoStack = [];
   }
   if (state && state.labelPos) {
@@ -2205,6 +2256,7 @@ function loadState() {
     updateSelInfo();
     redraw();
   }
+  syncModeBadgeUI();
 }
 
 function resize() {
