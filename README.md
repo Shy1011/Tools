@@ -57,6 +57,24 @@
 
 ![预览截图](svg-preview-preview.png)
 
+### 4. SVG 转可编辑 PPT(`svg-to-pptx.html`)
+
+把 SVG 文件或代码转成 PowerPoint 幻灯片,且**每一个元素都是 PPT 原生对象**(矩形、圆、自由曲线、连接线、文本框),不是贴图,可以在 PPT 里继续改颜色、改文字、拖动位置。
+
+功能:
+
+- 两种输入:直接把一个或多个 `.svg` 文件拖进页面(或用「打开 / 目录」按钮批量导入),也可以粘贴 SVG 代码;一个文件 = 一页幻灯片
+- 先预览再导出:右侧实时渲染预览,支持缩放(自适应 / 1:1 / `Ctrl+滚轮`)与透明格 / 白 / 黑 / 灰四档背景,底部显示尺寸、元素数与将生成的对象数
+- 可编辑性:矩形与圆角矩形→PPT 圆角矩形(圆角半径按 SVG 的 `rx` 等比还原)、圆/椭圆→椭圆、折线/多边形/曲线路径→自由形状(曲线按可调精度抽稀)、两点直线→连接线、`<text>`→文本框(保留字体、字号、粗斜体、颜色、对齐与逐行坐标)
+- 样式还原:实色填充、描边宽度、虚线、线帽/拐角、透明度、`<style>` 与 class、`transform`(平移/旋转/缩放/斜切,全部烘焙进坐标)、`<use>`/`<symbol>` 展开
+- 降级透明:渐变/图案按色标平均色近似、滤镜/遮罩/裁剪不应用、`<image>` 位图与 `<textPath>` 跳过 —— 每一条都会在左侧面板逐条列出,绝不静默丢内容
+- 多页合并:多个 SVG 一次导出为一个 PPTX;画布尺寸不一致时自动等比缩放居中并提示
+- 同时保留 PNG(1x / 2x / 4x)与 SVG 导出;`Ctrl+S` 导出 PPTX、`Ctrl+O` 打开文件、`Ctrl+Enter` 立即渲染
+- 自动保存当前文件列表到浏览器本地,刷新后恢复;纯本地运行,不上传任何数据,零第三方依赖(PPTX 由页面内自带的 OOXML + ZIP 写入器现场生成)
+- 实测:导出的 PPTX 用 PowerPoint 打开无「需要修复」提示,幻灯片尺寸与 SVG 画布 1:1(96dpi),形状位置与原图一致
+
+![预览截图](svg-to-pptx-preview.png)
+
 ## 使用方法
 
 1. 克隆或下载本仓库;
@@ -73,6 +91,8 @@
 | `xy-plotter-preview.png` | 工具预览截图 |
 | `svg-preview.html` | SVG 代码预览 / 导出工具页 |
 | `svg-preview-preview.png` | 工具预览截图 |
+| `svg-to-pptx.html` | SVG 转可编辑 PPT 工具页 |
+| `svg-to-pptx-preview.png` | 工具预览截图 |
 | `README.md` | 本说明文件 |
 | `README_EN.md` | English documentation |
 
@@ -81,6 +101,7 @@
 - 纯原生 HTML / CSS / JavaScript,零第三方依赖,离线可用
 - 位选择器按 32 位无符号整数计算;bit 31 置位时,`int32` 一栏显示补码形式的负数;注释保存在浏览器 `localStorage`
 - 曲线工具中,标题 / 轴标签位置与曲线数据均保存在当前浏览器本地;Log 坐标会自动跳过 0 和负数
+- SVG 转 PPT 工具用浏览器 DOM 解析 SVG(自动解析 CSS / class / `style` 与 `transform`),再按 DrawingML 规范现场生成 PPTX 与 ZIP 包,因此不需要任何第三方库;页面还对外暴露 `window.S2P.convert(...)` 与 `?qa=` / `?qaFile=` 两个自动化测试入口,方便脚本回归验证转换结果
 
 ## License
 

@@ -57,6 +57,24 @@ Features:
 
 ![Preview](svg-preview-preview.png)
 
+### 4. SVG → Editable PowerPoint (`svg-to-pptx.html`)
+
+Turn SVG files or code into a PowerPoint slide deck where **every element is a native PowerPoint object** — auto shapes, freeforms, connectors, and text boxes, never an embedded picture — so the deck stays editable in Office.
+
+Features:
+
+- Two ways in: drag one or more `.svg` files onto the page (or batch-import with the Open / Folder buttons), or paste SVG code; one file = one slide
+- Preview before export: live rendering on the right with fit / 1:1 / `Ctrl+wheel` zoom and four backgrounds (checkerboard / white / black / gray); the status bar shows size, element count, and how many objects will be created
+- Editability: rects and rounded rects → PowerPoint rounded rectangles (corner radius follows the SVG `rx`), circles / ellipses → ellipses, polylines / polygons / curves → freeform shapes (curves simplified at a selectable tolerance), two-point lines → connectors, `<text>` → text boxes (font, size, bold/italic, colour, alignment, and per-line coordinates preserved)
+- Styling: solid fills, stroke width, dash patterns, line caps / joins, opacity, `<style>` and class rules, `transform` (translate / rotate / scale / skew, all baked into coordinates), `<use>` / `<symbol>` expansion
+- Honest degradation: gradients and patterns are approximated by their average stop colour, filters / masks / clip paths are not applied, `<image>` bitmaps and `<textPath>` are skipped — every one of them is listed item by item in the left panel, nothing is dropped silently
+- Multi-page: several SVGs export into a single PPTX; differing canvas sizes are scaled and centred automatically with a notice
+- PNG (1x / 2x / 4x) and SVG export are kept as well; `Ctrl+S` exports the PPTX, `Ctrl+O` opens files, `Ctrl+Enter` re-renders
+- The file list is auto-saved in the browser and restored on refresh; everything runs locally, nothing is uploaded, and there are zero third-party dependencies (the PPTX is built in-page by a bundled OOXML + ZIP writer)
+- Verified: the exported PPTX opens in PowerPoint with no repair prompt, the slide size matches the SVG canvas 1:1 (96 dpi), and shapes land where the SVG put them
+
+![Preview](svg-to-pptx-preview.png)
+
 ## Usage
 
 1. Clone or download this repository;
@@ -73,6 +91,8 @@ Features:
 | `xy-plotter-preview.png` | Tool preview screenshot |
 | `svg-preview.html` | SVG preview / export tool page |
 | `svg-preview-preview.png` | Tool preview screenshot |
+| `svg-to-pptx.html` | SVG → editable PowerPoint tool page |
+| `svg-to-pptx-preview.png` | Tool preview screenshot |
 | `README.md` | Chinese documentation |
 | `README_EN.md` | This documentation (English) |
 
@@ -81,6 +101,7 @@ Features:
 - Pure vanilla HTML / CSS / JavaScript, zero third-party dependencies, works offline
 - The bit selector computes with 32-bit unsigned integers; when bit 31 is set, the `int32` column shows the two's-complement negative value; notes are saved in browser `localStorage`
 - In the plotter, title / axis label positions and curve data are saved locally in the current browser; log axes automatically skip 0 and negative values
+- The SVG → PPT tool parses SVG with the browser DOM (so CSS / class / `style` rules and `transform` are resolved for free) and then writes the PPTX and ZIP packages directly from the DrawingML specification — hence no third-party library. The page also exposes `window.S2P.convert(...)` plus the `?qa=` / `?qaFile=` entry points used by the automated regression checks
 
 ## License
 

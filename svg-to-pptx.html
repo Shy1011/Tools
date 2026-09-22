@@ -1,0 +1,2105 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>SVG 转可编辑 PPT 工具</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1b1e24; --panel2:#22262e; --panel3:#2b3038;
+    --line:#2e333c; --fg:#e8eaf0; --muted:#98a2b3;
+    --accent:#4c8dff; --ok:#3ecf8e; --err:#ff6b6b; --warn:#ffc857;
+  }
+  *{box-sizing:border-box}
+  [hidden]{display:none !important}
+  html,body{height:100%;margin:0}
+  body{
+    display:flex;flex-direction:column;overflow:hidden;
+    background:var(--bg);color:var(--fg);
+    font:14px/1.5 "Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,select{font:inherit;color:inherit}
+  h1{margin:0;font-size:15px;font-weight:600;white-space:nowrap}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;
+    padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .logo{
+    flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:10px;
+    background:linear-gradient(135deg,#4c8dff,#ffc857);color:#0b1520;
+    font-weight:800;font-size:12px;letter-spacing:.5px;
+  }
+  .sub{margin:1px 0 0;font-size:12px;color:var(--muted)}
+  .tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .btn{
+    padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+    cursor:pointer;transition:background .15s,border-color .15s;white-space:nowrap;
+  }
+  .btn:hover{background:var(--panel3);border-color:#3b424d}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:600}
+  .btn.primary:hover{background:#6ba0ff;border-color:#6ba0ff}
+  .btn.small{padding:4px 8px;font-size:12px}
+  .sep{width:1px;height:20px;background:var(--line)}
+  .minisel{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+  .minisel select{
+    padding:5px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;
+  }
+  .check{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
+
+  /* ---------- layout ---------- */
+  main{
+    flex:1;min-height:0;display:grid;
+    grid-template-columns:minmax(260px,1fr) 6px minmax(260px,1fr);
+  }
+  #splitter{background:var(--line);cursor:col-resize;touch-action:none;transition:background .15s}
+  #splitter:hover,#splitter.active{background:var(--accent)}
+  .pane{min-width:0;display:flex;flex-direction:column;min-height:0}
+  .panehead{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;justify-content:space-between;
+    padding:7px 10px;background:var(--panel);border-bottom:1px solid var(--line);font-size:12px;color:var(--muted);
+  }
+  .panehead .row{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .panehead strong{color:var(--fg);font-size:12px;font-weight:600}
+
+  /* ---------- file chips ---------- */
+  #files{
+    display:flex;flex-wrap:wrap;gap:6px;padding:8px 10px;background:var(--panel);
+    border-bottom:1px solid var(--line);max-height:96px;overflow:auto;
+  }
+  #files:empty{display:none}
+  .chip{
+    display:flex;align-items:center;gap:6px;max-width:100%;
+    padding:3px 4px 3px 8px;border:1px solid var(--line);border-radius:999px;background:var(--panel2);
+    font-size:12px;cursor:pointer;
+  }
+  .chip.active{border-color:var(--accent);background:#1d2b45}
+  .chip .nm{max-width:180px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .chip .idx{color:var(--muted);font-size:11px}
+  .chip button{
+    border:0;background:transparent;cursor:pointer;color:var(--muted);padding:0 4px;border-radius:6px;font-size:12px;
+  }
+  .chip button:hover{color:var(--fg);background:var(--panel3)}
+  .chip .mv{font-size:11px}
+
+  /* ---------- code ---------- */
+  #code{
+    flex:1;min-height:120px;resize:none;border:0;outline:0;padding:10px 12px;
+    background:#101216;color:#dfe4ec;
+    font:13px/1.55 Consolas,"Cascadia Mono","Courier New",monospace;
+    tab-size:2;white-space:pre;overflow:auto;
+  }
+  #code::placeholder{color:#5b6472}
+
+  /* ---------- warnings ---------- */
+  #warnPanel{
+    border-top:1px solid var(--line);background:#1d1b16;max-height:170px;overflow:auto;
+  }
+  #warnPanel .whead{
+    display:flex;align-items:center;justify-content:space-between;gap:8px;
+    padding:6px 10px;font-size:12px;color:var(--warn);position:sticky;top:0;background:#1d1b16;
+  }
+  #warnPanel ul{margin:0;padding:0 10px 8px 26px;font-size:12px;color:#d9c9a3}
+  #warnPanel li{margin:2px 0}
+  #warnPanel li b{color:var(--warn);font-weight:600}
+
+  /* ---------- preview ---------- */
+  #stage{
+    flex:1;min-height:0;position:relative;overflow:auto;display:grid;place-items:center;padding:18px;
+    background-color:#12141a;
+  }
+  #stage[data-bg="check"]{background-image:
+    linear-gradient(45deg,#1c2028 25%,transparent 25%,transparent 75%,#1c2028 75%),
+    linear-gradient(45deg,#1c2028 25%,transparent 25%,transparent 75%,#1c2028 75%);
+    background-size:18px 18px;background-position:0 0,9px 9px;}
+  #stage[data-bg="white"]{background:#ffffff}
+  #stage[data-bg="black"]{background:#000000}
+  #stage[data-bg="gray"]{background:#808080}
+  #holder{display:block;line-height:0}
+  #holder svg{display:block}
+  #empty{position:absolute;inset:0;display:grid;place-items:center;color:var(--muted);font-size:13px;pointer-events:none}
+  #errorbox{
+    position:absolute;inset:16px;overflow:auto;border:1px solid #5b2a2a;border-radius:10px;
+    background:#241a1a;color:#ffb4b4;padding:12px;
+  }
+  #errorbox pre{margin:0;font:12px/1.5 Consolas,monospace;white-space:pre-wrap}
+  .swatches{display:flex;gap:4px;align-items:center}
+  .swatch{width:18px;height:18px;border-radius:6px;border:1px solid var(--line);cursor:pointer}
+  .swatch.active{border-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
+  .swatch[data-bg="check"]{background-image:
+    linear-gradient(45deg,#2a2f38 25%,transparent 25%,transparent 75%,#2a2f38 75%),
+    linear-gradient(45deg,#2a2f38 25%,transparent 25%,transparent 75%,#2a2f38 75%);
+    background-size:8px 8px;background-position:0 0,4px 4px;background-color:#4a515e}
+  .swatch[data-bg="white"]{background:#ffffff}
+  .swatch[data-bg="black"]{background:#000000}
+  .swatch[data-bg="gray"]{background:#808080}
+  .hint{color:var(--muted);font-size:12px}
+
+  /* ---------- status ---------- */
+  footer{
+    display:flex;flex-wrap:wrap;gap:10px;align-items:center;justify-content:space-between;
+    padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);font-size:12px;color:var(--muted);
+  }
+  #status.ok{color:var(--ok)} #status.warn{color:var(--warn)} #status.err{color:var(--err)}
+
+  /* ---------- overlay / summary ---------- */
+  #dropmask{
+    position:fixed;inset:0;display:none;place-items:center;z-index:40;
+    background:rgba(12,16,24,.78);border:2px dashed var(--accent);
+    font-size:18px;color:#dbe6ff;
+  }
+  #dropmask.show{display:grid}
+  #summary{
+    position:fixed;inset:0;display:grid;place-items:center;z-index:50;background:rgba(8,10,14,.66);
+  }
+  #summary[hidden]{display:none}
+  #summary .box{
+    width:min(520px,92vw);max-height:84vh;overflow:auto;background:var(--panel);
+    border:1px solid var(--line);border-radius:14px;padding:18px 20px;
+  }
+  #summary h2{margin:0 0 10px;font-size:16px}
+  #summary table{width:100%;border-collapse:collapse;font-size:13px}
+  #summary td{padding:4px 0;border-bottom:1px solid var(--line);color:var(--fg)}
+  #summary td:first-child{color:var(--muted);width:42%}
+  #summary .acts{display:flex;justify-content:flex-end;gap:8px;margin-top:14px}
+  #measure{position:fixed;left:-20000px;top:0;width:0;height:0;overflow:visible;opacity:0;pointer-events:none}
+</style>
+</head>
+<body>
+  <header>
+    <div class="brand">
+      <div class="logo">PPT</div>
+      <div>
+        <h1>SVG 转可编辑 PPT</h1>
+        <p class="sub">拖入 SVG 文件或粘贴代码 → 实时预览 → 导出全矢量可编辑 PPTX（矩形 / 圆 / 曲线 / 文字都是 PPT 原生对象，纯本地运行）</p>
+      </div>
+    </div>
+    <div class="tools">
+      <button class="btn" id="btnPaste" title="从剪贴板读取 SVG 代码">📋 粘贴</button>
+      <button class="btn" id="btnOpen" title="选择一个或多个 .svg 文件 (Ctrl+O)">📂 打开</button>
+      <button class="btn" id="btnDir" title="选择一个文件夹，批量导入其中的 .svg">📁 目录</button>
+      <button class="btn" id="btnSample" title="载入示例 SVG">✨ 示例</button>
+      <button class="btn" id="btnClear" title="清空全部输入">🧹 清空</button>
+      <span class="sep"></span>
+      <label class="check" title="移除 script 与 on* 事件属性"><input type="checkbox" id="safeMode" checked> 安全模式</label>
+      <label class="minisel">曲线精度
+        <select id="tolerance">
+          <option value="0.15">精细 0.15px</option>
+          <option value="0.25" selected>标准 0.25px</option>
+          <option value="0.6">粗略 0.6px</option>
+        </select>
+      </label>
+      <span class="sep"></span>
+      <button class="btn primary" id="btnPptx" title="导出可编辑 PPTX (Ctrl+S)">⬇ 导出可编辑 PPTX</button>
+      <button class="btn" id="btnPng" title="导出当前预览为 PNG">PNG</button>
+      <select id="pngScale" title="PNG 分辨率">
+        <option value="1">1x</option>
+        <option value="2" selected>2x</option>
+        <option value="4">4x</option>
+      </select>
+      <button class="btn" id="btnSvg" title="导出当前 SVG">SVG</button>
+    </div>
+  </header>
+
+  <main id="main">
+    <section class="pane">
+      <div class="panehead">
+        <strong>SVG 输入</strong>
+        <span class="hint" id="fileHint">可拖入多个 .svg，一个文件 = 一页幻灯片</span>
+      </div>
+      <div id="files"></div>
+      <textarea id="code" spellcheck="false" placeholder="在此粘贴 SVG 代码，或把 .svg 文件拖进来"></textarea>
+      <div id="warnPanel" hidden>
+        <div class="whead"><strong>降级 / 警告</strong><span id="warnCount"></span></div>
+        <ul id="warnList"></ul>
+      </div>
+    </section>
+
+    <div id="splitter"></div>
+
+    <section class="pane">
+      <div class="panehead">
+        <strong>预览</strong>
+        <div class="row">
+          <button class="btn small" id="zoomOut" title="缩小">−</button>
+          <button class="btn small" id="zoomFit">自适应</button>
+          <button class="btn small" id="zoom100">1:1</button>
+          <button class="btn small" id="zoomIn" title="放大">+</button>
+          <span id="zoomLabel" class="hint">自适应</span>
+        </div>
+        <div class="row">
+          <span class="hint">背景</span>
+          <div class="swatches">
+            <div class="swatch active" data-bg="check" title="透明格"></div>
+            <div class="swatch" data-bg="white" title="白"></div>
+            <div class="swatch" data-bg="black" title="黑"></div>
+            <div class="swatch" data-bg="gray" title="灰"></div>
+          </div>
+        </div>
+      </div>
+      <div id="stage" data-bg="check">
+        <div id="holder"></div>
+        <div id="empty">把 SVG 文件拖进来，或粘贴 SVG 代码</div>
+        <div id="errorbox" hidden><pre id="errortext"></pre></div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <span id="info">就绪</span>
+    <span id="status">等待输入</span>
+  </footer>
+
+  <div id="dropmask">松开鼠标导入 SVG 文件</div>
+  <div id="summary" hidden>
+    <div class="box">
+      <h2 id="sumTitle">导出完成</h2>
+      <table id="sumTable"></table>
+      <div class="acts"><button class="btn primary" id="sumClose">知道了</button></div>
+    </div>
+  </div>
+  <div id="measure"></div>
+  <pre id="qa-out" hidden></pre>
+  <input type="file" id="fileInput" accept=".svg,.xml,image/svg+xml" multiple hidden>
+  <input type="file" id="dirInput" webkitdirectory hidden>
+
+<script>
+(function () {
+  'use strict';
+
+  /* =====================================================================
+     静态模板部件（PPTX 的骨架：主题 / 母版 / 版式），由本机 python-pptx
+     默认模板导出并精简后内联，运行时只生成幻灯片与演示文稿级部件。
+     ===================================================================== */
+  var TEMPLATE_PARTS = [{"name":"ppt/theme/theme1.xml","data":"<?xml version=\"1.0\" encoding=\"UTF-8\" standalone=\"yes\"?>\n<a:theme xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" name=\"Office Theme\"><a:themeElements><a:clrScheme name=\"Office\"><a:dk1><a:sysClr val=\"windowText\" lastClr=\"000000\"/></a:dk1><a:lt1><a:sysClr val=\"window\" lastClr=\"FFFFFF\"/></a:lt1><a:dk2><a:srgbClr val=\"1F497D\"/></a:dk2><a:lt2><a:srgbClr val=\"EEECE1\"/></a:lt2><a:accent1><a:srgbClr val=\"4F81BD\"/></a:accent1><a:accent2><a:srgbClr val=\"C0504D\"/></a:accent2><a:accent3><a:srgbClr val=\"9BBB59\"/></a:accent3><a:accent4><a:srgbClr val=\"8064A2\"/></a:accent4><a:accent5><a:srgbClr val=\"4BACC6\"/></a:accent5><a:accent6><a:srgbClr val=\"F79646\"/></a:accent6><a:hlink><a:srgbClr val=\"0000FF\"/></a:hlink><a:folHlink><a:srgbClr val=\"800080\"/></a:folHlink></a:clrScheme><a:fontScheme name=\"Office\"><a:majorFont><a:latin typeface=\"Calibri\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/><a:font script=\"Jpan\" typeface=\"\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af\"/><a:font script=\"Hang\" typeface=\"\ub9d1\uc740 \uace0\ub515\"/><a:font script=\"Hans\" typeface=\"\u5b8b\u4f53\"/><a:font script=\"Hant\" typeface=\"\u65b0\u7d30\u660e\u9ad4\"/><a:font script=\"Arab\" typeface=\"Times New Roman\"/><a:font script=\"Hebr\" typeface=\"Times New Roman\"/><a:font script=\"Thai\" typeface=\"Angsana New\"/><a:font script=\"Ethi\" typeface=\"Nyala\"/><a:font script=\"Beng\" typeface=\"Vrinda\"/><a:font script=\"Gujr\" typeface=\"Shruti\"/><a:font script=\"Khmr\" typeface=\"MoolBoran\"/><a:font script=\"Knda\" typeface=\"Tunga\"/><a:font script=\"Guru\" typeface=\"Raavi\"/><a:font script=\"Cans\" typeface=\"Euphemia\"/><a:font script=\"Cher\" typeface=\"Plantagenet Cherokee\"/><a:font script=\"Yiii\" typeface=\"Microsoft Yi Baiti\"/><a:font script=\"Tibt\" typeface=\"Microsoft Himalaya\"/><a:font script=\"Thaa\" typeface=\"MV Boli\"/><a:font script=\"Deva\" typeface=\"Mangal\"/><a:font script=\"Telu\" typeface=\"Gautami\"/><a:font script=\"Taml\" typeface=\"Latha\"/><a:font script=\"Syrc\" typeface=\"Estrangelo Edessa\"/><a:font script=\"Orya\" typeface=\"Kalinga\"/><a:font script=\"Mlym\" typeface=\"Kartika\"/><a:font script=\"Laoo\" typeface=\"DokChampa\"/><a:font script=\"Sinh\" typeface=\"Iskoola Pota\"/><a:font script=\"Mong\" typeface=\"Mongolian Baiti\"/><a:font script=\"Viet\" typeface=\"Times New Roman\"/><a:font script=\"Uigh\" typeface=\"Microsoft Uighur\"/><a:font script=\"Geor\" typeface=\"Sylfaen\"/></a:majorFont><a:minorFont><a:latin typeface=\"Calibri\"/><a:ea typeface=\"\"/><a:cs typeface=\"\"/><a:font script=\"Jpan\" typeface=\"\uff2d\uff33 \uff30\u30b4\u30b7\u30c3\u30af\"/><a:font script=\"Hang\" typeface=\"\ub9d1\uc740 \uace0\ub515\"/><a:font script=\"Hans\" typeface=\"\u5b8b\u4f53\"/><a:font script=\"Hant\" typeface=\"\u65b0\u7d30\u660e\u9ad4\"/><a:font script=\"Arab\" typeface=\"Arial\"/><a:font script=\"Hebr\" typeface=\"Arial\"/><a:font script=\"Thai\" typeface=\"Cordia New\"/><a:font script=\"Ethi\" typeface=\"Nyala\"/><a:font script=\"Beng\" typeface=\"Vrinda\"/><a:font script=\"Gujr\" typeface=\"Shruti\"/><a:font script=\"Khmr\" typeface=\"DaunPenh\"/><a:font script=\"Knda\" typeface=\"Tunga\"/><a:font script=\"Guru\" typeface=\"Raavi\"/><a:font script=\"Cans\" typeface=\"Euphemia\"/><a:font script=\"Cher\" typeface=\"Plantagenet Cherokee\"/><a:font script=\"Yiii\" typeface=\"Microsoft Yi Baiti\"/><a:font script=\"Tibt\" typeface=\"Microsoft Himalaya\"/><a:font script=\"Thaa\" typeface=\"MV Boli\"/><a:font script=\"Deva\" typeface=\"Mangal\"/><a:font script=\"Telu\" typeface=\"Gautami\"/><a:font script=\"Taml\" typeface=\"Latha\"/><a:font script=\"Syrc\" typeface=\"Estrangelo Edessa\"/><a:font script=\"Orya\" typeface=\"Kalinga\"/><a:font script=\"Mlym\" typeface=\"Kartika\"/><a:font script=\"Laoo\" typeface=\"DokChampa\"/><a:font script=\"Sinh\" typeface=\"Iskoola Pota\"/><a:font script=\"Mong\" typeface=\"Mongolian Baiti\"/><a:font script=\"Viet\" typeface=\"Arial\"/><a:font script=\"Uigh\" typeface=\"Microsoft Uighur\"/><a:font script=\"Geor\" typeface=\"Sylfaen\"/></a:minorFont></a:fontScheme><a:fmtScheme name=\"Office\"><a:fillStyleLst><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:gradFill rotWithShape=\"1\"><a:gsLst><a:gs pos=\"0\"><a:schemeClr val=\"phClr\"><a:tint val=\"50000\"/><a:satMod val=\"300000\"/></a:schemeClr></a:gs><a:gs pos=\"35000\"><a:schemeClr val=\"phClr\"><a:tint val=\"37000\"/><a:satMod val=\"300000\"/></a:schemeClr></a:gs><a:gs pos=\"100000\"><a:schemeClr val=\"phClr\"><a:tint val=\"15000\"/><a:satMod val=\"350000\"/></a:schemeClr></a:gs></a:gsLst><a:lin ang=\"16200000\" scaled=\"1\"/></a:gradFill><a:gradFill rotWithShape=\"1\"><a:gsLst><a:gs pos=\"0\"><a:schemeClr val=\"phClr\"><a:tint val=\"100000\"/><a:shade val=\"100000\"/><a:satMod val=\"130000\"/></a:schemeClr></a:gs><a:gs pos=\"100000\"><a:schemeClr val=\"phClr\"><a:tint val=\"50000\"/><a:shade val=\"100000\"/><a:satMod val=\"350000\"/></a:schemeClr></a:gs></a:gsLst><a:lin ang=\"16200000\" scaled=\"0\"/></a:gradFill></a:fillStyleLst><a:lnStyleLst><a:ln w=\"9525\" cap=\"flat\" cmpd=\"sng\" algn=\"ctr\"><a:solidFill><a:schemeClr val=\"phClr\"><a:shade val=\"95000\"/><a:satMod val=\"105000\"/></a:schemeClr></a:solidFill><a:prstDash val=\"solid\"/></a:ln><a:ln w=\"25400\" cap=\"flat\" cmpd=\"sng\" algn=\"ctr\"><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:prstDash val=\"solid\"/></a:ln><a:ln w=\"38100\" cap=\"flat\" cmpd=\"sng\" algn=\"ctr\"><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:prstDash val=\"solid\"/></a:ln></a:lnStyleLst><a:effectStyleLst><a:effectStyle><a:effectLst><a:outerShdw blurRad=\"40000\" dist=\"20000\" dir=\"5400000\" rotWithShape=\"0\"><a:srgbClr val=\"000000\"><a:alpha val=\"38000\"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad=\"40000\" dist=\"23000\" dir=\"5400000\" rotWithShape=\"0\"><a:srgbClr val=\"000000\"><a:alpha val=\"35000\"/></a:srgbClr></a:outerShdw></a:effectLst></a:effectStyle><a:effectStyle><a:effectLst><a:outerShdw blurRad=\"40000\" dist=\"23000\" dir=\"5400000\" rotWithShape=\"0\"><a:srgbClr val=\"000000\"><a:alpha val=\"35000\"/></a:srgbClr></a:outerShdw></a:effectLst><a:scene3d><a:camera prst=\"orthographicFront\"><a:rot lat=\"0\" lon=\"0\" rev=\"0\"/></a:camera><a:lightRig rig=\"threePt\" dir=\"t\"><a:rot lat=\"0\" lon=\"0\" rev=\"1200000\"/></a:lightRig></a:scene3d><a:sp3d><a:bevelT w=\"63500\" h=\"25400\"/></a:sp3d></a:effectStyle></a:effectStyleLst><a:bgFillStyleLst><a:solidFill><a:schemeClr val=\"phClr\"/></a:solidFill><a:gradFill rotWithShape=\"1\"><a:gsLst><a:gs pos=\"0\"><a:schemeClr val=\"phClr\"><a:tint val=\"40000\"/><a:satMod val=\"350000\"/></a:schemeClr></a:gs><a:gs pos=\"40000\"><a:schemeClr val=\"phClr\"><a:tint val=\"45000\"/><a:shade val=\"99000\"/><a:satMod val=\"350000\"/></a:schemeClr></a:gs><a:gs pos=\"100000\"><a:schemeClr val=\"phClr\"><a:shade val=\"20000\"/><a:satMod val=\"255000\"/></a:schemeClr></a:gs></a:gsLst><a:path path=\"circle\"><a:fillToRect l=\"50000\" t=\"-80000\" r=\"50000\" b=\"180000\"/></a:path></a:gradFill><a:gradFill rotWithShape=\"1\"><a:gsLst><a:gs pos=\"0\"><a:schemeClr val=\"phClr\"><a:tint val=\"80000\"/><a:satMod val=\"300000\"/></a:schemeClr></a:gs><a:gs pos=\"100000\"><a:schemeClr val=\"phClr\"><a:shade val=\"30000\"/><a:satMod val=\"200000\"/></a:schemeClr></a:gs></a:gsLst><a:path path=\"circle\"><a:fillToRect l=\"50000\" t=\"50000\" r=\"50000\" b=\"50000\"/></a:path></a:gradFill></a:bgFillStyleLst></a:fmtScheme></a:themeElements><a:objectDefaults><a:spDef><a:spPr/><a:bodyPr/><a:lstStyle/><a:style><a:lnRef idx=\"1\"><a:schemeClr val=\"accent1\"/></a:lnRef><a:fillRef idx=\"3\"><a:schemeClr val=\"accent1\"/></a:fillRef><a:effectRef idx=\"2\"><a:schemeClr val=\"accent1\"/></a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"lt1\"/></a:fontRef></a:style></a:spDef><a:lnDef><a:spPr/><a:bodyPr/><a:lstStyle/><a:style><a:lnRef idx=\"2\"><a:schemeClr val=\"accent1\"/></a:lnRef><a:fillRef idx=\"0\"><a:schemeClr val=\"accent1\"/></a:fillRef><a:effectRef idx=\"1\"><a:schemeClr val=\"accent1\"/></a:effectRef><a:fontRef idx=\"minor\"><a:schemeClr val=\"tx1\"/></a:fontRef></a:style></a:lnDef></a:objectDefaults><a:extraClrSchemeLst/></a:theme>"},{"name":"ppt/slideMasters/slideMaster1.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldMaster xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\"><p:cSld><p:bg><p:bgRef idx=\"1001\"><a:schemeClr val=\"bg1\"/></p:bgRef></p:bg><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title Placeholder 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"274638\"/><a:ext cx=\"8229600\" cy=\"1143000\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr vert=\"horz\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"ctr\"><a:normAutofit/></a:bodyPr><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Text Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"1600200\"/><a:ext cx=\"8229600\" cy=\"4525963\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr vert=\"horz\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\"><a:normAutofit/></a:bodyPr><a:lstStyle/><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Date Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"6356350\"/><a:ext cx=\"2133600\" cy=\"365125\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr vert=\"horz\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"ctr\"/><a:lstStyle><a:lvl1pPr algn=\"l\"><a:defRPr sz=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl1pPr></a:lstStyle><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Footer Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"3\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"3124200\" y=\"6356350\"/><a:ext cx=\"2895600\" cy=\"365125\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr vert=\"horz\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"ctr\"/><a:lstStyle><a:lvl1pPr algn=\"ctr\"><a:defRPr sz=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl1pPr></a:lstStyle><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Slide Number Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"4\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"6553200\" y=\"6356350\"/><a:ext cx=\"2133600\" cy=\"365125\"/></a:xfrm><a:prstGeom prst=\"rect\"><a:avLst/></a:prstGeom></p:spPr><p:txBody><a:bodyPr vert=\"horz\" lIns=\"91440\" tIns=\"45720\" rIns=\"91440\" bIns=\"45720\" rtlCol=\"0\" anchor=\"ctr\"/><a:lstStyle><a:lvl1pPr algn=\"r\"><a:defRPr sz=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl1pPr></a:lstStyle><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"2209977519\"/></p:ext></p:extLst></p:cSld><p:clrMap bg1=\"lt1\" tx1=\"dk1\" bg2=\"lt2\" tx2=\"dk2\" accent1=\"accent1\" accent2=\"accent2\" accent3=\"accent3\" accent4=\"accent4\" accent5=\"accent5\" accent6=\"accent6\" hlink=\"hlink\" folHlink=\"folHlink\"/><p:sldLayoutIdLst><p:sldLayoutId id=\"2147483649\" r:id=\"rId1\"/><p:sldLayoutId id=\"2147483650\" r:id=\"rId2\"/><p:sldLayoutId id=\"2147483651\" r:id=\"rId3\"/><p:sldLayoutId id=\"2147483652\" r:id=\"rId4\"/><p:sldLayoutId id=\"2147483653\" r:id=\"rId5\"/><p:sldLayoutId id=\"2147483654\" r:id=\"rId6\"/><p:sldLayoutId id=\"2147483655\" r:id=\"rId7\"/><p:sldLayoutId id=\"2147483656\" r:id=\"rId8\"/><p:sldLayoutId id=\"2147483657\" r:id=\"rId9\"/><p:sldLayoutId id=\"2147483658\" r:id=\"rId10\"/><p:sldLayoutId id=\"2147483659\" r:id=\"rId11\"/></p:sldLayoutIdLst><p:txStyles><p:titleStyle><a:lvl1pPr algn=\"ctr\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"0\"/></a:spcBef><a:buNone/><a:defRPr sz=\"4400\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mj-lt\"/><a:ea typeface=\"+mj-ea\"/><a:cs typeface=\"+mj-cs\"/></a:defRPr></a:lvl1pPr></p:titleStyle><p:bodyStyle><a:lvl1pPr marL=\"342900\" indent=\"-342900\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2022\"/><a:defRPr sz=\"3200\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl1pPr><a:lvl2pPr marL=\"742950\" indent=\"-285750\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2013\"/><a:defRPr sz=\"2800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl2pPr><a:lvl3pPr marL=\"1143000\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2022\"/><a:defRPr sz=\"2400\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl3pPr><a:lvl4pPr marL=\"1600200\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2013\"/><a:defRPr sz=\"2000\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl4pPr><a:lvl5pPr marL=\"2057400\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u00bb\"/><a:defRPr sz=\"2000\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl5pPr><a:lvl6pPr marL=\"2514600\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2022\"/><a:defRPr sz=\"2000\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl6pPr><a:lvl7pPr marL=\"2971800\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2022\"/><a:defRPr sz=\"2000\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl7pPr><a:lvl8pPr marL=\"3429000\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2022\"/><a:defRPr sz=\"2000\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl8pPr><a:lvl9pPr marL=\"3886200\" indent=\"-228600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:spcBef><a:spcPct val=\"20000\"/></a:spcBef><a:buFont typeface=\"Arial\"/><a:buChar char=\"\u2022\"/><a:defRPr sz=\"2000\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl9pPr></p:bodyStyle><p:otherStyle><a:defPPr><a:defRPr lang=\"en-US\"/></a:defPPr><a:lvl1pPr marL=\"0\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl1pPr><a:lvl2pPr marL=\"457200\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl2pPr><a:lvl3pPr marL=\"914400\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" algn=\"l\" defTabSz=\"457200\" rtl=\"0\" eaLnBrk=\"1\" latinLnBrk=\"0\" hangingPunct=\"1\"><a:defRPr sz=\"1800\" kern=\"1200\"><a:solidFill><a:schemeClr val=\"tx1\"/></a:solidFill><a:latin typeface=\"+mn-lt\"/><a:ea typeface=\"+mn-ea\"/><a:cs typeface=\"+mn-cs\"/></a:defRPr></a:lvl9pPr></p:otherStyle></p:txStyles></p:sldMaster>"},{"name":"ppt/slideMasters/_rels/slideMaster1.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout1.xml\"/><Relationship Id=\"rId2\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout2.xml\"/><Relationship Id=\"rId3\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout3.xml\"/><Relationship Id=\"rId4\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout4.xml\"/><Relationship Id=\"rId5\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout5.xml\"/><Relationship Id=\"rId6\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout6.xml\"/><Relationship Id=\"rId7\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout7.xml\"/><Relationship Id=\"rId8\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout8.xml\"/><Relationship Id=\"rId9\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout9.xml\"/><Relationship Id=\"rId10\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout10.xml\"/><Relationship Id=\"rId11\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout\" Target=\"../slideLayouts/slideLayout11.xml\"/><Relationship Id=\"rId12\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme\" Target=\"../theme/theme1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout1.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"title\" preserve=\"1\"><p:cSld name=\"Title Slide\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ctrTitle\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"685800\" y=\"2130425\"/><a:ext cx=\"7772400\" cy=\"1470025\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Subtitle 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"subTitle\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"1371600\" y=\"3886200\"/><a:ext cx=\"6400800\" cy=\"1752600\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\" algn=\"ctr\"><a:buNone/><a:defRPr><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl9pPr></a:lstStyle><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master subtitle style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Date Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Footer Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Slide Number Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"3168075583\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout1.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout2.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"obj\" preserve=\"1\"><p:cSld name=\"Title and Content\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Content Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Date Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Footer Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Slide Number Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"2614314258\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout2.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout3.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"secHead\" preserve=\"1\"><p:cSld name=\"Section Header\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"722313\" y=\"4406900\"/><a:ext cx=\"7772400\" cy=\"1362075\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor=\"t\"/><a:lstStyle><a:lvl1pPr algn=\"l\"><a:defRPr sz=\"4000\" b=\"1\" cap=\"all\"/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Text Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"722313\" y=\"2906713\"/><a:ext cx=\"7772400\" cy=\"1500187\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor=\"b\"/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1800\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"><a:solidFill><a:schemeClr val=\"tx1\"><a:tint val=\"75000\"/></a:schemeClr></a:solidFill></a:defRPr></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Date Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Footer Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Slide Number Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"960648375\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout3.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout4.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"twoObj\" preserve=\"1\"><p:cSld name=\"Two Content\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Content Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph sz=\"half\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"1600200\"/><a:ext cx=\"4038600\" cy=\"4525963\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr sz=\"2800\"/></a:lvl1pPr><a:lvl2pPr><a:defRPr sz=\"2400\"/></a:lvl2pPr><a:lvl3pPr><a:defRPr sz=\"2000\"/></a:lvl3pPr><a:lvl4pPr><a:defRPr sz=\"1800\"/></a:lvl4pPr><a:lvl5pPr><a:defRPr sz=\"1800\"/></a:lvl5pPr><a:lvl6pPr><a:defRPr sz=\"1800\"/></a:lvl6pPr><a:lvl7pPr><a:defRPr sz=\"1800\"/></a:lvl7pPr><a:lvl8pPr><a:defRPr sz=\"1800\"/></a:lvl8pPr><a:lvl9pPr><a:defRPr sz=\"1800\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Content Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph sz=\"half\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"4648200\" y=\"1600200\"/><a:ext cx=\"4038600\" cy=\"4525963\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr sz=\"2800\"/></a:lvl1pPr><a:lvl2pPr><a:defRPr sz=\"2400\"/></a:lvl2pPr><a:lvl3pPr><a:defRPr sz=\"2000\"/></a:lvl3pPr><a:lvl4pPr><a:defRPr sz=\"1800\"/></a:lvl4pPr><a:lvl5pPr><a:defRPr sz=\"1800\"/></a:lvl5pPr><a:lvl6pPr><a:defRPr sz=\"1800\"/></a:lvl6pPr><a:lvl7pPr><a:defRPr sz=\"1800\"/></a:lvl7pPr><a:lvl8pPr><a:defRPr sz=\"1800\"/></a:lvl8pPr><a:lvl9pPr><a:defRPr sz=\"1800\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Date Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Footer Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"7\" name=\"Slide Number Placeholder 6\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"2782244947\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout4.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout5.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"twoTxTwoObj\" preserve=\"1\"><p:cSld name=\"Comparison\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Text Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"1535113\"/><a:ext cx=\"4040188\" cy=\"639762\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor=\"b\"/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2400\" b=\"1\"/></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\" b=\"1\"/></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1800\" b=\"1\"/></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Content Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph sz=\"half\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"2174875\"/><a:ext cx=\"4040188\" cy=\"3951288\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr sz=\"2400\"/></a:lvl1pPr><a:lvl2pPr><a:defRPr sz=\"2000\"/></a:lvl2pPr><a:lvl3pPr><a:defRPr sz=\"1800\"/></a:lvl3pPr><a:lvl4pPr><a:defRPr sz=\"1600\"/></a:lvl4pPr><a:lvl5pPr><a:defRPr sz=\"1600\"/></a:lvl5pPr><a:lvl6pPr><a:defRPr sz=\"1600\"/></a:lvl6pPr><a:lvl7pPr><a:defRPr sz=\"1600\"/></a:lvl7pPr><a:lvl8pPr><a:defRPr sz=\"1600\"/></a:lvl8pPr><a:lvl9pPr><a:defRPr sz=\"1600\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Text Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" sz=\"quarter\" idx=\"3\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"4645025\" y=\"1535113\"/><a:ext cx=\"4041775\" cy=\"639762\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor=\"b\"/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2400\" b=\"1\"/></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\" b=\"1\"/></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1800\" b=\"1\"/></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1600\" b=\"1\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Content Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph sz=\"quarter\" idx=\"4\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"4645025\" y=\"2174875\"/><a:ext cx=\"4041775\" cy=\"3951288\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr sz=\"2400\"/></a:lvl1pPr><a:lvl2pPr><a:defRPr sz=\"2000\"/></a:lvl2pPr><a:lvl3pPr><a:defRPr sz=\"1800\"/></a:lvl3pPr><a:lvl4pPr><a:defRPr sz=\"1600\"/></a:lvl4pPr><a:lvl5pPr><a:defRPr sz=\"1600\"/></a:lvl5pPr><a:lvl6pPr><a:defRPr sz=\"1600\"/></a:lvl6pPr><a:lvl7pPr><a:defRPr sz=\"1600\"/></a:lvl7pPr><a:lvl8pPr><a:defRPr sz=\"1600\"/></a:lvl8pPr><a:lvl9pPr><a:defRPr sz=\"1600\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"7\" name=\"Date Placeholder 6\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"8\" name=\"Footer Placeholder 7\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"9\" name=\"Slide Number Placeholder 8\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"990158736\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout5.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout6.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"titleOnly\" preserve=\"1\"><p:cSld name=\"Title Only\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Date Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Footer Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Slide Number Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"727027711\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout6.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout7.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"blank\" preserve=\"1\"><p:cSld name=\"Blank\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Date Placeholder 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Footer Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Slide Number Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"1212999818\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout7.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout8.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"objTx\" preserve=\"1\"><p:cSld name=\"Content with Caption\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"273050\"/><a:ext cx=\"3008313\" cy=\"1162050\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor=\"b\"/><a:lstStyle><a:lvl1pPr algn=\"l\"><a:defRPr sz=\"2000\" b=\"1\"/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Content Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"3575050\" y=\"273050\"/><a:ext cx=\"5111750\" cy=\"5853113\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr><a:defRPr sz=\"3200\"/></a:lvl1pPr><a:lvl2pPr><a:defRPr sz=\"2800\"/></a:lvl2pPr><a:lvl3pPr><a:defRPr sz=\"2400\"/></a:lvl3pPr><a:lvl4pPr><a:defRPr sz=\"2000\"/></a:lvl4pPr><a:lvl5pPr><a:defRPr sz=\"2000\"/></a:lvl5pPr><a:lvl6pPr><a:defRPr sz=\"2000\"/></a:lvl6pPr><a:lvl7pPr><a:defRPr sz=\"2000\"/></a:lvl7pPr><a:lvl8pPr><a:defRPr sz=\"2000\"/></a:lvl8pPr><a:lvl9pPr><a:defRPr sz=\"2000\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Text Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" sz=\"half\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"1435100\"/><a:ext cx=\"3008313\" cy=\"4691063\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"/></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1200\"/></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1000\"/></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Date Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Footer Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"7\" name=\"Slide Number Placeholder 6\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"1840726560\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout8.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout9.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"picTx\" preserve=\"1\"><p:cSld name=\"Picture with Caption\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"1792288\" y=\"4800600\"/><a:ext cx=\"5486400\" cy=\"566738\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr anchor=\"b\"/><a:lstStyle><a:lvl1pPr algn=\"l\"><a:defRPr sz=\"2000\" b=\"1\"/></a:lvl1pPr></a:lstStyle><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Picture Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"pic\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"1792288\" y=\"612775\"/><a:ext cx=\"5486400\" cy=\"4114800\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\"><a:buNone/><a:defRPr sz=\"3200\"/></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2800\"/></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2400\"/></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"/></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"/></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"/></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"/></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"/></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"2000\"/></a:lvl9pPr></a:lstStyle><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Text Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" sz=\"half\" idx=\"2\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"1792288\" y=\"5367338\"/><a:ext cx=\"5486400\" cy=\"804862\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr/><a:lstStyle><a:lvl1pPr marL=\"0\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1400\"/></a:lvl1pPr><a:lvl2pPr marL=\"457200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1200\"/></a:lvl2pPr><a:lvl3pPr marL=\"914400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"1000\"/></a:lvl3pPr><a:lvl4pPr marL=\"1371600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl4pPr><a:lvl5pPr marL=\"1828800\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl5pPr><a:lvl6pPr marL=\"2286000\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl6pPr><a:lvl7pPr marL=\"2743200\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl7pPr><a:lvl8pPr marL=\"3200400\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl8pPr><a:lvl9pPr marL=\"3657600\" indent=\"0\"><a:buNone/><a:defRPr sz=\"900\"/></a:lvl9pPr></a:lstStyle><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Date Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Footer Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"7\" name=\"Slide Number Placeholder 6\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"3889236939\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout9.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout10.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"vertTx\" preserve=\"1\"><p:cSld name=\"Title and Vertical Text\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Vertical Text Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" orient=\"vert\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr vert=\"eaVert\"/><a:lstStyle/><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Date Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Footer Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Slide Number Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"2910927964\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout10.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"},{"name":"ppt/slideLayouts/slideLayout11.xml","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<p:sldLayout xmlns:a=\"http://schemas.openxmlformats.org/drawingml/2006/main\" xmlns:r=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships\" xmlns:p=\"http://schemas.openxmlformats.org/presentationml/2006/main\" type=\"vertTitleAndTx\" preserve=\"1\"><p:cSld name=\"Vertical Title and Text\"><p:spTree><p:nvGrpSpPr><p:cNvPr id=\"1\" name=\"\"/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr><a:xfrm><a:off x=\"0\" y=\"0\"/><a:ext cx=\"0\" cy=\"0\"/><a:chOff x=\"0\" y=\"0\"/><a:chExt cx=\"0\" cy=\"0\"/></a:xfrm></p:grpSpPr><p:sp><p:nvSpPr><p:cNvPr id=\"2\" name=\"Vertical Title 1\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"title\" orient=\"vert\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"6629400\" y=\"274638\"/><a:ext cx=\"2057400\" cy=\"5851525\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr vert=\"eaVert\"/><a:lstStyle/><a:p><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master title style</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"3\" name=\"Vertical Text Placeholder 2\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"body\" orient=\"vert\" idx=\"1\"/></p:nvPr></p:nvSpPr><p:spPr><a:xfrm><a:off x=\"457200\" y=\"274638\"/><a:ext cx=\"6019800\" cy=\"5851525\"/></a:xfrm></p:spPr><p:txBody><a:bodyPr vert=\"eaVert\"/><a:lstStyle/><a:p><a:pPr lvl=\"0\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Click to edit Master text styles</a:t></a:r></a:p><a:p><a:pPr lvl=\"1\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Second level</a:t></a:r></a:p><a:p><a:pPr lvl=\"2\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Third level</a:t></a:r></a:p><a:p><a:pPr lvl=\"3\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fourth level</a:t></a:r></a:p><a:p><a:pPr lvl=\"4\"/><a:r><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>Fifth level</a:t></a:r><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"4\" name=\"Date Placeholder 3\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"dt\" sz=\"half\" idx=\"10\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{5BCAD085-E8A6-8845-BD4E-CB4CCA059FC4}\" type=\"datetimeFigureOut\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>1/27/13</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"5\" name=\"Footer Placeholder 4\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"ftr\" sz=\"quarter\" idx=\"11\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp><p:sp><p:nvSpPr><p:cNvPr id=\"6\" name=\"Slide Number Placeholder 5\"/><p:cNvSpPr><a:spLocks noGrp=\"1\"/></p:cNvSpPr><p:nvPr><p:ph type=\"sldNum\" sz=\"quarter\" idx=\"12\"/></p:nvPr></p:nvSpPr><p:spPr/><p:txBody><a:bodyPr/><a:lstStyle/><a:p><a:fld id=\"{C1FF6DA9-008F-8B48-92A6-B652298478BF}\" type=\"slidenum\"><a:rPr lang=\"en-US\" smtClean=\"0\"/><a:t>\u2039#\u203a</a:t></a:fld><a:endParaRPr lang=\"en-US\"/></a:p></p:txBody></p:sp></p:spTree><p:extLst><p:ext uri=\"{BB962C8B-B14F-4D97-AF65-F5344CB8AC3E}\"><p14:creationId xmlns:p14=\"http://schemas.microsoft.com/office/powerpoint/2010/main\" val=\"3612223792\"/></p:ext></p:extLst></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sldLayout>"},{"name":"ppt/slideLayouts/_rels/slideLayout11.xml.rels","data":"<?xml version='1.0' encoding='UTF-8' standalone='yes'?>\n<Relationships xmlns=\"http://schemas.openxmlformats.org/package/2006/relationships\"><Relationship Id=\"rId1\" Type=\"http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster\" Target=\"../slideMasters/slideMaster1.xml\"/></Relationships>"}];
+
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var XLINK_NS = 'http://www.w3.org/1999/xlink';
+  var EMU_PER_PX = 9525;                 // 96 dpi
+  var MAX_SHAPES = 3000;                 // 单页对象数上限提示
+  var MAX_POINTS = 20000;                // 单形状抽稀后点数上限提示
+  var ASCENT_FUDGE = 1.0;                // 文本框基线微调系数（经 PowerPoint 实测校准）
+  var LS_KEY = 'svg2pptx.draft.v1';
+  var LS_LIMIT = 400000;                 // 草稿超过该体积就不写入 localStorage
+
+  var $ = function (id) { return document.getElementById(id); };
+  var clamp = function (v, a, b) { return Math.min(b, Math.max(a, v)); };
+  var round2 = function (n) { return Math.round(n * 100) / 100; };
+  function escXml(s) {
+    return String(s == null ? '' : s)
+      .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;').replace(/\u0000/g, '');
+  }
+  function stamp() {
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+      p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+  function num(v, dflt) {
+    var n = parseFloat(v);
+    return isFinite(n) ? n : (dflt === undefined ? 0 : dflt);
+  }
+  function alphaOf(v) {
+    var n = parseFloat(v);
+    return isFinite(n) ? clamp(n, 0, 1) : 1;
+  }
+  function tagOf(el) {
+    var t = (el.localName || el.tagName || '?').toLowerCase();
+    return '<' + t + '>';
+  }
+
+  /* ===================== 长度 / 画布尺寸 ===================== */
+  var UNIT_PX = { px: 1, pt: 96 / 72, pc: 16, in: 96, mm: 96 / 25.4, cm: 96 / 2.54, q: 96 / 101.6 };
+  function lenToPx(v) {
+    if (v == null) return NaN;
+    var s = String(v).trim();
+    if (!s || s.indexOf('%') >= 0) return NaN;
+    var m = /^([+-]?[\d.]+(?:e[+-]?\d+)?)\s*([a-z]*)$/i.exec(s);
+    if (!m) return NaN;
+    var n = parseFloat(m[1]);
+    if (!isFinite(n)) return NaN;
+    var unit = (m[2] || 'px').toLowerCase();
+    if (UNIT_PX[unit] === undefined) return n;  // em/ex 等按数值近似
+    return n * UNIT_PX[unit];
+  }
+  function parseViewBox(v) {
+    if (!v) return null;
+    var n = String(v).trim().split(/[\s,]+/).map(parseFloat);
+    if (n.length !== 4 || !n.every(isFinite)) return null;
+    if (!(Math.abs(n[2]) > 0) || !(Math.abs(n[3]) > 0)) return null;
+    return [n[0], n[1], Math.abs(n[2]), Math.abs(n[3])];
+  }
+  function canvasSize(svg) {
+    var vb = parseViewBox(svg.getAttribute('viewBox'));
+    var w = lenToPx(svg.getAttribute('width'));
+    var h = lenToPx(svg.getAttribute('height'));
+    if (!(w > 0)) w = vb ? vb[2] : 300;
+    if (!(h > 0)) h = vb ? vb[3] : 150;
+    return { w: round2(w), h: round2(h) };
+  }
+  function viewBoxMatrix(el, W, H) {
+    var vb = parseViewBox(el.getAttribute('viewBox'));
+    if (!vb) return IDENT();
+    var par = String(el.getAttribute('preserveAspectRatio') || 'xMidYMid meet').trim().split(/\s+/);
+    var align = par[0] || 'xMidYMid';
+    if (align === 'defer') { align = par[1] || 'xMidYMid'; par = par.slice(1); }
+    var mode = par[1] || 'meet';
+    if (align === 'none') {
+      var sx = W / vb[2], sy = H / vb[3];
+      return [sx, 0, 0, sy, -vb[0] * sx, -vb[1] * sy];
+    }
+    var s = mode === 'slice' ? Math.max(W / vb[2], H / vb[3]) : Math.min(W / vb[2], H / vb[3]);
+    var ax = align.indexOf('xMid') === 0 ? 0.5 : (align.indexOf('xMax') === 0 ? 1 : 0);
+    var ay = align.indexOf('YMid') > 0 ? 0.5 : (align.indexOf('YMax') > 0 ? 1 : 0);
+    return [s, 0, 0, s, -vb[0] * s + (W - vb[2] * s) * ax, -vb[1] * s + (H - vb[3] * s) * ay];
+  }
+
+  /* ===================== 矩阵 ===================== */
+  function IDENT() { return [1, 0, 0, 1, 0, 0]; }
+  function matMul(m1, m2) {
+    return [
+      m1[0] * m2[0] + m1[2] * m2[1],
+      m1[1] * m2[0] + m1[3] * m2[1],
+      m1[0] * m2[2] + m1[2] * m2[3],
+      m1[1] * m2[2] + m1[3] * m2[3],
+      m1[0] * m2[4] + m1[2] * m2[5] + m1[4],
+      m1[1] * m2[4] + m1[3] * m2[5] + m1[5]
+    ];
+  }
+  function matApply(m, x, y) {
+    return [m[0] * x + m[2] * y + m[4], m[1] * x + m[3] * y + m[5]];
+  }
+  function matScale(m) {
+    var d = Math.abs(m[0] * m[3] - m[1] * m[2]);
+    return d > 0 ? Math.sqrt(d) : 1;
+  }
+  function matIsAxis(m) { return Math.abs(m[1]) < 1e-6 && Math.abs(m[2]) < 1e-6; }
+  function matIsSimilar(m) {
+    var s = 1 + Math.abs(m[0]) + Math.abs(m[1]) + Math.abs(m[3]);
+    var eps = 1e-6 * s;
+    return Math.abs(m[0] - m[3]) < eps && Math.abs(m[1] + m[2]) < eps;
+  }
+  function matRotation(m) { return Math.atan2(m[1], m[0]) * 180 / Math.PI; }
+
+  function parseTransform(str) {
+    var m = IDENT();
+    if (!str) return m;
+    var re = /([a-zA-Z]+)\s*\(([^)]*)\)/g, mt;
+    while ((mt = re.exec(str))) {
+      var name = mt[1].toLowerCase();
+      var nums = mt[2].split(/[\s,]+/).filter(function (s) { return s !== ''; }).map(parseFloat);
+      var t = null;
+      if (name === 'matrix' && nums.length >= 6) t = nums.slice(0, 6);
+      else if (name === 'translate') t = [1, 0, 0, 1, num(nums[0]), num(nums[1])];
+      else if (name === 'scale') {
+        var sx = num(nums[0], 1), sy = nums.length > 1 ? num(nums[1], sx) : sx;
+        t = [sx, 0, 0, sy, 0, 0];
+      } else if (name === 'rotate') {
+        var a = num(nums[0]) * Math.PI / 180, c = Math.cos(a), s2 = Math.sin(a);
+        t = [c, s2, -s2, c, 0, 0];
+        if (nums.length >= 3) {
+          var cx = num(nums[1]), cy = num(nums[2]);
+          t = matMul([1, 0, 0, 1, cx, cy], matMul(t, [1, 0, 0, 1, -cx, -cy]));
+        }
+      } else if (name === 'skewx') t = [1, 0, Math.tan(num(nums[0]) * Math.PI / 180), 1, 0, 0];
+      else if (name === 'skewy') t = [1, Math.tan(num(nums[0]) * Math.PI / 180), 0, 1, 0, 0];
+      if (t) m = matMul(m, t);
+    }
+    return m;
+  }
+  function elementTransform(el, ctx) {
+    var attr = el.getAttribute('transform');
+    if (attr) return parseTransform(attr);
+    if (el.style && el.style.transform) return cssMatrix(el.style.transform);
+    try {
+      var cs = ctx.cs(el);
+      if (cs.transform && cs.transform !== 'none' && cs.transform.indexOf('matrix') === 0) {
+        ctx.warn(tagOf(el), '使用 CSS transform，已按 SVG 默认原点近似');
+        return cssMatrix(cs.transform);
+      }
+    } catch (e) { }
+    return IDENT();
+  }
+  function cssMatrix(str) {
+    var m = /matrix\(([^)]+)\)/.exec(str);
+    if (!m) return IDENT();
+    var n = m[1].split(/[\s,]+/).map(parseFloat);
+    return n.length >= 6 && n.every(isFinite) ? n.slice(0, 6) : IDENT();
+  }
+
+  /* ===================== 颜色 ===================== */
+  var _cctx = null;
+  function canvasCtx() {
+    if (!_cctx) _cctx = document.createElement('canvas').getContext('2d');
+    return _cctx;
+  }
+  function hex2(n) {
+    var v = Math.round(clamp(n, 0, 255));
+    return (v < 16 ? '0' : '') + v.toString(16);
+  }
+  function parseColor(input) {
+    if (input == null) return null;
+    var str = String(input).trim();
+    if (!str) return null;
+    var low = str.toLowerCase();
+    if (low === 'none' || low === 'transparent' || low === 'currentcolor') return null;
+    if (str.charAt(0) !== '#' && low.indexOf('rgb') !== 0 && low.indexOf('hsl') !== 0 && low.indexOf('color(') !== 0) {
+      // 命名颜色等：交给浏览器归一化
+      var norm = null;
+      try { var c = canvasCtx(); c.fillStyle = '#000'; c.fillStyle = str; norm = c.fillStyle; } catch (e) { }
+      if (norm && norm !== '#000' || low === 'black') str = norm || str;
+      low = str.toLowerCase();
+    }
+    var m;
+    if (str.charAt(0) === '#') {
+      var h = str.slice(1);
+      if (h.length === 3) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      if (h.length === 4) h = h[0] + h[0] + h[1] + h[1] + h[2] + h[2];
+      if (h.length === 8) return { hex: h.slice(0, 6).toUpperCase(), alpha: parseInt(h.slice(6, 8), 16) / 255 };
+      if (h.length === 6) return { hex: h.toUpperCase(), alpha: 1 };
+      return null;
+    }
+    if ((m = /^rgba?\(([^)]+)\)$/.exec(low))) {
+      var parts = m[1].split(/[\s,\/]+/).filter(function (s) { return s !== ''; });
+      var r = parseFloat(parts[0]), g = parseFloat(parts[1]), b = parseFloat(parts[2]);
+      if (![r, g, b].every(isFinite)) return null;
+      var a = parts.length > 3 ? parseFloat(parts[3]) : 1;
+      return { hex: (hex2(r) + hex2(g) + hex2(b)).toUpperCase(), alpha: isFinite(a) ? clamp(a, 0, 1) : 1 };
+    }
+    if ((m = /^color\(srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)(?:\s*\/\s*([\d.]+))?\)$/.exec(low))) {
+      return {
+        hex: (hex2(parseFloat(m[1]) * 255) + hex2(parseFloat(m[2]) * 255) + hex2(parseFloat(m[3]) * 255)).toUpperCase(),
+        alpha: m[4] !== undefined ? clamp(parseFloat(m[4]), 0, 1) : 1
+      };
+    }
+    return null;
+  }
+  function urlRef(value) {
+    var m = /^url\(\s*["']?#([^"')]+)["']?\s*\)$/i.exec(String(value || '').trim());
+    return m ? m[1] : null;
+  }
+  function findById(root, id) {
+    if (!id) return null;
+    var sel = '[id="' + String(id).replace(/["\\]/g, '\\$&') + '"]';
+    try { return root.querySelector(sel); } catch (e) { return null; }
+  }
+  // 渐变 / 图案降级：取各色标 RGB 与透明度的平均值作为纯色
+  function gradientAverage(refEl, ctx) {
+    var stops = refEl.querySelectorAll('stop');
+    var rs = 0, gs = 0, bs = 0, as = 0, n = 0;
+    for (var i = 0; i < stops.length; i++) {
+      var st = stops[i], cs;
+      try { cs = ctx.cs(st); } catch (e) { continue; }
+      var colRaw = (cs && cs.stopColor) || st.getAttribute('stop-color') || '#000';
+      var c = parseColor(colRaw);
+      if (!c) continue;
+      var so = (cs && cs.stopOpacity) || st.getAttribute('stop-opacity');
+      var a = c.alpha * (so === undefined ? 1 : alphaOf(so));
+      rs += parseInt(c.hex.slice(0, 2), 16);
+      gs += parseInt(c.hex.slice(2, 4), 16);
+      bs += parseInt(c.hex.slice(4, 6), 16);
+      as += a; n++;
+    }
+    if (!n) return null;
+    return { hex: (hex2(rs / n) + hex2(gs / n) + hex2(bs / n)).toUpperCase(), alpha: as / n };
+  }
+
+  /* ===================== SVG 解析 / 净化 ===================== */
+  function normalize(src) {
+    var s = String(src || '');
+    if (s.charCodeAt(0) === 0xFEFF) s = s.slice(1);
+    return s;
+  }
+  function ensureNamespace(s) {
+    if (!/^\s*<svg[\s>]/i.test(s)) return s;
+    if (/xmlns\s*=\s*["']http:\/\/www\.w3\.org\/2000\/svg["']/i.test(s)) return s;
+    return s.replace(/<svg/i, '<svg xmlns="' + SVG_NS + '"');
+  }
+  function parseErrorText(node) {
+    var t = (node.textContent || '').replace(/\s+/g, ' ').trim();
+    return t.slice(0, 300) || 'SVG 语法错误';
+  }
+  function parseSvg(src) {
+    var text = ensureNamespace(normalize(src));
+    if (!text.trim()) throw new Error('内容为空');
+    var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    var bad = doc.getElementsByTagName('parsererror')[0] || doc.querySelector('parsererror');
+    if (bad) throw new Error(parseErrorText(bad));
+    var root = doc.documentElement;
+    if (!root || (root.localName || root.nodeName).toLowerCase() !== 'svg') throw new Error('根节点不是 <svg> 元素');
+    return root;
+  }
+  function sanitize(svg) {
+    var scripts = svg.getElementsByTagName('script');
+    while (scripts.length) scripts[0].parentNode.removeChild(scripts[0]);
+    cleanAttrs(svg);
+    var all = svg.getElementsByTagName('*');
+    for (var i = 0; i < all.length; i++) cleanAttrs(all[i]);
+    return svg;
+  }
+  function cleanAttrs(el) {
+    var attrs = el.attributes;
+    if (!attrs) return;
+    for (var i = attrs.length - 1; i >= 0; i--) {
+      var name = attrs[i].name, value = attrs[i].value || '';
+      if (/^on/i.test(name) || /^\s*javascript:/i.test(value)) el.removeAttribute(name);
+    }
+  }
+  function countElements(svg) { return svg.getElementsByTagName('*').length + 1; }
+  function serialize(svg, size) {
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', SVG_NS);
+    var all = clone.getElementsByTagName('*');
+    var needXlink = false;
+    for (var i = 0; i < all.length && !needXlink; i++) {
+      var attrs = all[i].attributes;
+      for (var j = 0; j < attrs.length; j++) {
+        if (String(attrs[j].name).toLowerCase().indexOf('xlink:') === 0) { needXlink = true; break; }
+      }
+    }
+    if (needXlink && !clone.getAttribute('xmlns:xlink')) clone.setAttribute('xmlns:xlink', XLINK_NS);
+    if (size) {
+      clone.setAttribute('width', String(size.w));
+      clone.setAttribute('height', String(size.h));
+    }
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  /* ===================== 图元抽取：SVG → 原始形状模型 ===================== */
+  var SKIP_TAGS = {
+    defs: 1, symbol: 1, clippath: 1, mask: 1, marker: 1, pattern: 1,
+    lineargradient: 1, radialgradient: 1, filter: 1, style: 1, title: 1,
+    desc: 1, metadata: 1, script: 1, animate: 1, animatetransform: 1, set: 1
+  };
+
+  function extractSlide(svgEl, opts) {
+    var canvas = canvasSize(svgEl);
+    svgEl.setAttribute('width', canvas.w);
+    svgEl.setAttribute('height', canvas.h);
+    svgEl.style.width = canvas.w + 'px';
+    svgEl.style.height = canvas.h + 'px';
+    if (!svgEl.style.background) svgEl.style.background = 'transparent';
+
+    var csCache = new WeakMap();
+    var warnMap = {};
+    var ctx = {
+      root: svgEl,
+      canvas: canvas,
+      shapes: [],
+      warnings: [],
+      stats: { rect: 0, ellipse: 0, poly: 0, line: 0, text: 0 },
+      tolerance: opts && opts.tolerance ? opts.tolerance : 0.25,
+      maxPoints: 0,
+      cs: function (el) {
+        var v = csCache.get(el);
+        if (!v) { v = window.getComputedStyle(el); csCache.set(el, v); }
+        return v;
+      },
+      warn: function (tag, reason) {
+        var key = tag + '|' + reason;
+        if (warnMap[key]) { warnMap[key].count++; return; }
+        var w = { tag: tag, reason: reason, count: 1 };
+        warnMap[key] = w;
+        ctx.warnings.push(w);
+      },
+      push: function (shape) {
+        if (ctx.shapes.length >= MAX_SHAPES * 4) return;
+        ctx.shapes.push(shape);
+      },
+      box: { x: 0, y: 0, w: canvas.w, h: canvas.h }
+    };
+
+    var rootM = viewBoxMatrix(svgEl, canvas.w, canvas.h);
+    walk(svgEl, rootM, 0);
+    if (ctx.shapes.length > MAX_SHAPES) {
+      ctx.warn('<svg>', '本页生成对象 ' + ctx.shapes.length + ' 个，超过 ' + MAX_SHAPES + ' 个，PPT 编辑可能变慢');
+    }
+    if (ctx.maxPoints > MAX_POINTS) {
+      ctx.warn('<path>', '单个形状抽稀后仍有 ' + ctx.maxPoints + ' 个点，建议改用更粗略的曲线精度');
+    }
+    return { canvas: canvas, shapes: ctx.shapes, warnings: ctx.warnings, stats: ctx.stats };
+
+    /* ---- 遍历 ---- */
+    function walk(parent, acc, depth) {
+      if (depth > 60) return;
+      var kids = parent.childNodes;
+      for (var i = 0; i < kids.length; i++) {
+        var el = kids[i];
+        if (!el.nodeType || el.nodeType !== 1) continue;
+        var tag = (el.localName || el.tagName).toLowerCase();
+        if (SKIP_TAGS[tag]) continue;
+        if (el.namespaceURI && el.namespaceURI !== SVG_NS) continue;
+        if (isInvisible(el, ctx)) continue;
+        var m = matMul(acc, elementTransform(el, ctx));
+        if (tag === 'g' || tag === 'a') { walk(el, m, depth + 1); continue; }
+        if (tag === 'svg') {
+          var nx = num(el.getAttribute('x')), ny = num(el.getAttribute('y'));
+          var nw = lenToPx(el.getAttribute('width')), nh = lenToPx(el.getAttribute('height'));
+          var mm = matMul(acc, [1, 0, 0, 1, nx, ny]);
+          if (nw > 0 && nh > 0) mm = matMul(mm, viewBoxMatrix(el, nw, nh));
+          walk(el, mm, depth + 1); continue;
+        }
+        if (tag === 'use') { expandUse(el, m, depth + 1); continue; }
+        if (tag === 'rect') { emitRect(el, m, ctx); continue; }
+        if (tag === 'circle' || tag === 'ellipse') { emitEllipse(el, m, ctx, tag); continue; }
+        if (tag === 'line') { emitLine(el, m, ctx); continue; }
+        if (tag === 'polyline' || tag === 'polygon') { emitPolyEl(el, m, ctx, tag === 'polygon'); continue; }
+        if (tag === 'path') { emitPath(el, m, ctx); continue; }
+        if (tag === 'text') { emitText(el, m, ctx); continue; }
+        if (tag === 'image') {
+          if (!el.getAttribute('display') || el.getAttribute('display') !== 'none') {
+            ctx.warn('<image>', '内嵌位图无法转成可编辑形状，已跳过');
+          }
+          continue;
+        }
+        if (tag === 'textpath' || tag === 'foreignobject') { ctx.warn(tagOf(el), '暂不支持该元素，已跳过'); continue; }
+        ctx.warn(tagOf(el), '不认识的元素，已跳过');
+      }
+    }
+
+    function isInvisible(el, ctx) {
+      var cs = ctx.cs(el);
+      if (cs.display === 'none') return true;
+      if (cs.visibility === 'hidden' || cs.visibility === 'collapse') return true;
+      var op = parseFloat(cs.opacity);
+      if (isFinite(op) && op <= 0.001) return true;
+      if (cs.filter && cs.filter !== 'none') ctx.warn(tagOf(el), '未应用滤镜效果');
+      if (cs.clipPath && cs.clipPath !== 'none') ctx.warn(tagOf(el), '未应用裁剪路径');
+      if (cs.mask && cs.mask !== 'none') ctx.warn(tagOf(el), '未应用遮罩');
+      return false;
+    }
+
+    function expandUse(el, m, depth) {
+      if (depth > 20) return;
+      var href = el.getAttribute('href') || el.getAttributeNS(XLINK_NS, 'href') || el.getAttribute('xlink:href');
+      if (!href || href.charAt(0) !== '#') { ctx.warn('<use>', '引用了外部资源，已跳过'); return; }
+      var target = findById(svgEl, href.slice(1));
+      if (!target) { ctx.warn('<use>', '找不到引用的元素，已跳过'); return; }
+      var tx = num(el.getAttribute('x')), ty = num(el.getAttribute('y'));
+      var base = matMul(m, [1, 0, 0, 1, tx, ty]);
+      var ttag = (target.localName || '').toLowerCase();
+      if (ttag === 'symbol') {
+        var uw = lenToPx(el.getAttribute('width')), uh = lenToPx(el.getAttribute('height'));
+        if (!(uw > 0)) uw = lenToPx(target.getAttribute('width'));
+        if (!(uh > 0)) uh = lenToPx(target.getAttribute('height'));
+        var tvb = parseViewBox(target.getAttribute('viewBox'));
+        if (uw > 0 && uh > 0 && tvb) base = matMul(base, viewBoxMatrix(target, uw, uh));
+        walk(target, base, depth + 1);
+      } else {
+        var inner = matMul(base, elementTransform(target, ctx));
+        var itag = ttag;
+        if (itag === 'g' || itag === 'a') walk(target, inner, depth + 1);
+        else if (itag === 'rect') emitRect(target, inner, ctx);
+        else if (itag === 'circle' || itag === 'ellipse') emitEllipse(target, inner, ctx, itag);
+        else if (itag === 'line') emitLine(target, inner, ctx);
+        else if (itag === 'polyline' || itag === 'polygon') emitPolyEl(target, inner, ctx, itag === 'polygon');
+        else if (itag === 'path') emitPath(target, inner, ctx);
+        else if (itag === 'text') emitText(target, inner, ctx);
+        else ctx.warn('<use>', '引用的元素类型不支持，已跳过');
+      }
+    }
+  }
+
+  /* ---- 填充 / 描边 ---- */
+  function hasFillIntent(el, cs) {
+    if (el.hasAttribute && el.hasAttribute('fill')) return true;
+    var st = el.getAttribute && el.getAttribute('style');
+    if (st && /(^|;)\s*fill\s*:/i.test(st)) return true;
+    var p = el.parentNode;
+    while (p && p.nodeType === 1) {
+      if (p.hasAttribute && p.hasAttribute('fill')) return true;
+      var ps = p.getAttribute && p.getAttribute('style');
+      if (ps && /(^|;)\s*fill\s*:/i.test(ps)) return true;
+      if ((p.localName || '').toLowerCase() === 'svg') break;
+      p = p.parentNode;
+    }
+    try {
+      var pcs = el.parentNode && el.parentNode.nodeType === 1 ? window.getComputedStyle(el.parentNode) : null;
+      if (pcs && cs.fill && cs.fill !== 'none' && cs.fill !== pcs.fill) return true;
+    } catch (e) { }
+    return false;
+  }
+  function getFill(el, ctx, openShape) {
+    var cs = ctx.cs(el);
+    var raw = cs.fill;
+    if (!raw || raw === 'none') return null;
+    if (openShape && !hasFillIntent(el, cs)) return null;
+    var op = alphaOf(cs.opacity) * alphaOf(cs.fillOpacity);
+    var ref = urlRef(raw);
+    if (ref) {
+      var g = findById(ctx.root, ref);
+      var avg = g ? gradientAverage(g, ctx) : null;
+      if (!avg) { ctx.warn(tagOf(el), '填充引用了无法解析的渐变 / 图案，已忽略'); return null; }
+      ctx.warn(tagOf(el), '渐变填充已近似为平均纯色');
+      return { hex: avg.hex, alpha: clamp(avg.alpha * op, 0, 1) };
+    }
+    var c = parseColor(raw);
+    if (!c) { ctx.warn(tagOf(el), '无法识别的填充色 ' + raw + '，已忽略'); return null; }
+    return { hex: c.hex, alpha: clamp(c.alpha * op, 0, 1) };
+  }
+  function dashPreset(str, widthPx) {
+    if (!str || str === 'none') return null;
+    var n = String(str).split(/[,\s]+/).map(parseFloat).filter(isFinite);
+    if (!n.length) return null;
+    var v = n[0], w = Math.max(widthPx, 0.2);
+    var r = v / w;
+    if (r < 1.2) return 'sysDot';
+    if (r < 2.5) return 'dot';
+    if (r < 5) return 'dash';
+    if (r < 10) return 'lgDash';
+    return 'lgDashDot';
+  }
+  function getStroke(el, ctx, m) {
+    var cs = ctx.cs(el);
+    var raw = cs.stroke;
+    if (!raw || raw === 'none') return null;
+    var wLocal = parseFloat(cs.strokeWidth);
+    if (!isFinite(wLocal)) wLocal = 1;
+    var width = wLocal * matScale(m);
+    if (!(width > 0)) return null;
+    var op = alphaOf(cs.opacity) * alphaOf(cs.strokeOpacity);
+    var paint = null, ref = urlRef(raw);
+    if (ref) {
+      var g = findById(ctx.root, ref);
+      var avg = g ? gradientAverage(g, ctx) : null;
+      if (!avg) { ctx.warn(tagOf(el), '描边引用了无法解析的渐变 / 图案，已忽略描边'); return null; }
+      ctx.warn(tagOf(el), '渐变描边已近似为平均纯色');
+      paint = { hex: avg.hex, alpha: clamp(avg.alpha * op, 0, 1) };
+    } else {
+      var c = parseColor(raw);
+      if (!c) { ctx.warn(tagOf(el), '无法识别的描边色 ' + raw + '，已忽略描边'); return null; }
+      paint = { hex: c.hex, alpha: clamp(c.alpha * op, 0, 1) };
+    }
+    if (paint.alpha <= 0.001) return null;
+    var cap = 'flat';
+    if (cs.strokeLinecap === 'round') cap = 'rnd';
+    else if (cs.strokeLinecap === 'square') cap = 'sq';
+    var join = cs.strokeLinejoin === 'round' ? 'round'
+      : (cs.strokeLinejoin === 'bevel' ? 'bevel' : 'miter');
+    var arrows = { start: false, end: false, size: 'med' };
+    if (cs.markerStart && cs.markerStart !== 'none') arrows.start = true;
+    if (cs.markerEnd && cs.markerEnd !== 'none') arrows.end = true;
+    if (arrows.start || arrows.end) {
+      arrows.size = markerSizeOf(cs.markerEnd || cs.markerStart, ctx);
+      ctx.warn(tagOf(el), '箭头按 PPT 三角箭头近似（大小 ' + arrows.size + '）');
+    }
+    return {
+      hex: paint.hex, alpha: paint.alpha, width: width, cap: cap, join: join,
+      prstDash: dashPreset(cs.strokeDasharray, wLocal), arrows: arrows
+    };
+  }
+  // SVG 的 markerWidth 默认 3（相对 stroke-width），映射到 PPT 的箭头档位
+  function markerSizeOf(urlVal, ctx) {
+    var id = urlRef(urlVal);
+    var mk = id ? findById(ctx.root, id) : null;
+    if (!mk) return 'med';
+    var mw = parseFloat(mk.getAttribute('markerWidth'));
+    if (!isFinite(mw) || mw <= 0) mw = 3;
+    var sb = mk.getAttribute('stroke-width');
+    void sb;
+    if (mw >= 5) return 'lg';
+    if (mw >= 1.5) return 'med';
+    return 'sm';
+  }
+
+  /* ---- 各元素 ---- */
+  function emitRect(el, m, ctx) {
+    var x = num(el.getAttribute('x')), y = num(el.getAttribute('y'));
+    var w = num(el.getAttribute('width')), h = num(el.getAttribute('height'));
+    if (!(w > 0) || !(h > 0)) return;
+    var rx = parseFloat(el.getAttribute('rx')), ry = parseFloat(el.getAttribute('ry'));
+    if (!isFinite(rx) && isFinite(ry)) rx = ry;
+    if (!isFinite(ry) && isFinite(rx)) ry = rx;
+    if (!isFinite(rx)) { rx = num(ctx.cs(el).rx, 0); }
+    if (!isFinite(ry)) { ry = num(ctx.cs(el).ry, 0); }
+    rx = clamp(rx || 0, 0, w / 2);
+    ry = clamp(ry || 0, 0, h / 2);
+    var fill = getFill(el, ctx, false), stroke = getStroke(el, ctx, m);
+    if (!fill && !stroke) return;
+    var rounded = rx > 0.01 || ry > 0.01;
+    if (matIsAxis(m)) {
+      var p1 = matApply(m, x, y), p2 = matApply(m, x + w, y + h);
+      var bx = Math.min(p1[0], p2[0]), by = Math.min(p1[1], p2[1]);
+      var bw = Math.abs(p2[0] - p1[0]), bh = Math.abs(p2[1] - p1[1]);
+      ctx.stats.rect++;
+      ctx.push({
+        type: 'shape', prst: rounded ? 'roundRect' : 'rect', fixSw: true,
+        x: bx, y: by, w: bw, h: bh, rot: 0,
+        adj: rounded ? clamp(round2(rx) / Math.min(bw, bh) * 100000, 0, 50000) : 0,
+        fill: fill, stroke: stroke
+      });
+      return;
+    }
+    if (matIsSimilar(m)) {
+      var s = Math.hypot(m[0], m[1]);
+      var ctr = matApply(m, x + w / 2, y + h / 2);
+      var bw2 = w * s, bh2 = h * s;
+      ctx.stats.rect++;
+      ctx.push({
+        type: 'shape', prst: rounded ? 'roundRect' : 'rect', fixSw: true,
+        x: ctr[0] - bw2 / 2, y: ctr[1] - bh2 / 2, w: bw2, h: bh2,
+        rot: matRotation(m),
+        adj: rounded ? clamp(round2(rx) / Math.min(w, h) * 100000, 0, 50000) : 0,
+        fill: fill, stroke: stroke
+      });
+      return;
+    }
+    polyPush([[x, y], [x + w, y], [x + w, y + h], [x, y + h]].map(function (p) {
+      return matApply(m, p[0], p[1]);
+    }), true, fill, stroke, ctx);
+  }
+
+  function emitEllipse(el, m, ctx, tag) {
+    var cx = num(el.getAttribute('cx')), cy = num(el.getAttribute('cy'));
+    var rx, ry;
+    if (tag === 'circle') { rx = ry = num(el.getAttribute('r')); }
+    else { rx = num(el.getAttribute('rx')); ry = num(el.getAttribute('ry')); }
+    if (!(rx > 0) || !(ry > 0)) return;
+    var fill = getFill(el, ctx, false), stroke = getStroke(el, ctx, m);
+    if (!fill && !stroke) return;
+    if (matIsAxis(m)) {
+      var c = matApply(m, cx, cy);
+      var rrx = Math.abs(m[0]) * rx, rry = Math.abs(m[3]) * ry;
+      ctx.stats.ellipse++;
+      ctx.push({ type: 'shape', prst: 'ellipse', x: c[0] - rrx, y: c[1] - rry, w: rrx * 2, h: rry * 2, rot: 0, fill: fill, stroke: stroke });
+      return;
+    }
+    if (matIsSimilar(m)) {
+      var s = Math.hypot(m[0], m[1]);
+      var cc = matApply(m, cx, cy);
+      ctx.stats.ellipse++;
+      ctx.push({
+        type: 'shape', prst: 'ellipse', x: cc[0] - rx * s, y: cc[1] - ry * s,
+        w: rx * 2 * s, h: ry * 2 * s, rot: matRotation(m), fill: fill, stroke: stroke
+      });
+      return;
+    }
+    ctx.warn(tagOf(el), '非均匀 / 错切变换下的椭圆已按多边形近似');
+    var pts = [];
+    for (var i = 0; i < 72; i++) {
+      var a = i / 72 * Math.PI * 2;
+      pts.push(matApply(m, cx + Math.cos(a) * rx, cy + Math.sin(a) * ry));
+    }
+    polyPush(pts, true, fill, stroke, ctx);
+  }
+
+  function emitLine(el, m, ctx) {
+    var x1 = num(el.getAttribute('x1')), y1 = num(el.getAttribute('y1'));
+    var x2 = num(el.getAttribute('x2')), y2 = num(el.getAttribute('y2'));
+    var stroke = getStroke(el, ctx, m);
+    var fill = getFill(el, ctx, true);
+    if (!stroke && !fill) return;
+    polyPush([matApply(m, x1, y1), matApply(m, x2, y2)], false, fill, stroke, ctx);
+  }
+
+  function emitPolyEl(el, m, ctx, closed) {
+    var raw = (el.getAttribute('points') || '').trim();
+    if (!raw) return;
+    var nums = raw.split(/[\s,]+/).map(parseFloat).filter(isFinite);
+    var pts = [];
+    for (var i = 0; i + 1 < nums.length; i += 2) pts.push(matApply(m, nums[i], nums[i + 1]));
+    if (pts.length < 2) return;
+    var fill = getFill(el, ctx, !closed), stroke = getStroke(el, ctx, m);
+    if (!fill && !stroke) return;
+    polyPush(pts, closed, fill, stroke, ctx);
+  }
+
+  function emitPath(el, m, ctx) {
+    var fill = getFill(el, ctx, true), stroke = getStroke(el, ctx, m);
+    if (!fill && !stroke) return;
+    var d = (el.getAttribute('d') || '').trim();
+    if (!d) return;
+    var closed = /[zZ]\s*$/.test(d);
+    var len = 0;
+    try { len = el.getTotalLength(); } catch (e) { len = 0; }
+    if (!(len > 0)) {
+      // 零长度路径：SVG 只在圆头线帽下可见，直接跳过
+      return;
+    }
+    var n = clamp(Math.ceil(len / 1.0), 2, 6000);
+    var pts = [];
+    for (var i = 0; i <= n; i++) {
+      var p = el.getPointAtLength(len * i / n);
+      pts.push(matApply(m, p.x, p.y));
+    }
+    pts = simplify(pts, Math.max(0.02, ctx.tolerance));
+    if (pts.length > ctx.maxPoints) ctx.maxPoints = pts.length;
+    if (pts.length < 2) return;
+    if (closed && pts.length > 2 && dist2(pts[0], pts[pts.length - 1]) < 0.25) pts.pop();
+    polyPush(pts, closed, fill, stroke, ctx);
+  }
+
+  function polyPush(pts, closed, fill, stroke, ctx) {
+    if (!fill && !stroke) return;
+    pts = dedupe(pts);
+    if (pts.length < 2) return;
+    if (!closed && pts.length === 2) {
+      var p1 = pts[0], p2 = pts[1];
+      var w = Math.abs(p2[0] - p1[0]), h = Math.abs(p2[1] - p1[1]);
+      if (w < 0.01 && h < 0.01) return;
+      ctx.stats.line++;
+      ctx.push({
+        type: 'line', fixSw: true,
+        x: Math.min(p1[0], p2[0]), y: Math.min(p1[1], p2[1]), w: w, h: h,
+        flipH: p2[0] < p1[0], flipV: p2[1] < p1[1],
+        fill: null, stroke: stroke
+      });
+      return;
+    }
+    ctx.stats.poly++;
+    ctx.push({ type: 'poly', pts: pts, closed: !!closed, fixSw: true, fill: fill, stroke: stroke });
+  }
+
+  function dist2(a, b) {
+    var dx = a[0] - b[0], dy = a[1] - b[1];
+    return dx * dx + dy * dy;
+  }
+  function dedupe(pts) {
+    var out = [];
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (!isFinite(p[0]) || !isFinite(p[1])) continue;
+      if (out.length) {
+        var q = out[out.length - 1];
+        if (Math.abs(q[0] - p[0]) < 1e-4 && Math.abs(q[1] - p[1]) < 1e-4) continue;
+      }
+      out.push([round2(p[0]), round2(p[1])]);
+    }
+    return out;
+  }
+  // Douglas–Peucker 抽稀
+  function simplify(pts, tol) {
+    if (pts.length < 3) return pts;
+    var keep = new Uint8Array(pts.length);
+    keep[0] = 1; keep[pts.length - 1] = 1;
+    var stack = [[0, pts.length - 1]];
+    var t2 = tol * tol;
+    while (stack.length) {
+      var seg = stack.pop(), i0 = seg[0], i1 = seg[1];
+      if (i1 <= i0 + 1) continue;
+      var a = pts[i0], b = pts[i1];
+      var dx = b[0] - a[0], dy = b[1] - a[1];
+      var den = dx * dx + dy * dy;
+      var best = -1, bestD = -1;
+      for (var i = i0 + 1; i < i1; i++) {
+        var p = pts[i], d;
+        if (den < 1e-12) d = dist2(p, a);
+        else {
+          var t = ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / den;
+          t = clamp(t, 0, 1);
+          var px = a[0] + t * dx, py = a[1] + t * dy;
+          d = (p[0] - px) * (p[0] - px) + (p[1] - py) * (p[1] - py);
+        }
+        if (d > bestD) { bestD = d; best = i; }
+      }
+      if (bestD > t2 && best > 0) {
+        keep[best] = 1;
+        stack.push([i0, best], [best, i1]);
+      }
+    }
+    var out = [];
+    for (var k = 0; k < pts.length; k++) if (keep[k]) out.push(pts[k]);
+    return out;
+  }
+
+  /* ---- 文字 ---- */
+  var GENERIC_FONT = {
+    'sans-serif': 'Arial', 'serif': 'Times New Roman', 'monospace': 'Consolas',
+    'cursive': 'Segoe Script', 'fantasy': 'Impact', 'system-ui': 'Segoe UI'
+  };
+  function fontFamilies(cs) {
+    var raw = (cs.fontFamily || '').split(',');
+    var names = [];
+    for (var i = 0; i < raw.length; i++) {
+      var n = raw[i].trim().replace(/^["']|["']$/g, '');
+      if (!n) continue;
+      var key = n.toLowerCase();
+      if (GENERIC_FONT[key]) n = GENERIC_FONT[key];
+      if (names.indexOf(n) < 0) names.push(n);
+    }
+    return names.length ? names : ['Segoe UI'];
+  }
+  function hasCJK(s) { return /[\u2E80-\u9FFF\uF900-\uFAFF\uFF00-\uFFEF]/.test(s); }
+  function measureAscent(names, sizePx, text) {
+    try {
+      var c = canvasCtx();
+      c.font = '400 ' + sizePx + 'px ' + names.map(function (n) { return '"' + n + '"'; }).join(', ') + ', sans-serif';
+      var mt = c.measureText(text || 'Hg中');
+      var a = mt.fontBoundingBoxAscent || mt.actualBoundingBoxAscent;
+      if (a > 0) return a * ASCENT_FUDGE;
+    } catch (e) { }
+    return sizePx * 0.88 * ASCENT_FUDGE;
+  }
+  function measureTextWidth(names, sizePx, weight, italic, text) {
+    try {
+      var c = canvasCtx();
+      c.font = (italic ? 'italic ' : '') + (weight || '400') + ' ' + sizePx + 'px ' +
+        names.map(function (n) { return '"' + n + '"'; }).join(', ') + ', sans-serif';
+      return c.measureText(text).width;
+    } catch (e) { return 0; }
+  }
+  // 把 <text> 拆成若干“行”：同一行内的 tspan 会合并，出现自己的 x / y / dy 时换行。
+  // 每一行单独输出一个文本框，这样每行各自的 x、字号、颜色、对齐都能忠实还原。
+  function textLinesOf(el) {
+    var lines = [];
+    var cur = { text: '', x: null, y: null, dy: 0, dx: 0, node: el };
+    lines.push(cur);
+    function consume(node) {
+      for (var i = 0; i < node.childNodes.length; i++) {
+        var n = node.childNodes[i];
+        if (n.nodeType === 3) {
+          if (n.nodeValue) cur.text += n.nodeValue.replace(/[\r\n\t]/g, ' ');
+          continue;
+        }
+        if (n.nodeType !== 1) continue;
+        var nt = (n.localName || '').toLowerCase();
+        if (nt !== 'tspan' && nt !== 'a') continue;
+        var hasX = n.hasAttribute('x'), hasY = n.hasAttribute('y');
+        var dy = parseFloat(n.getAttribute('dy'));
+        if (!isFinite(dy)) dy = 0;
+        var dx = parseFloat(n.getAttribute('dx'));
+        if (!isFinite(dx)) dx = 0;
+        var breaks = (hasX || hasY || Math.abs(dy) > 0.001) && cur.text.trim() !== '';
+        if (breaks) {
+          cur = { text: '', x: null, y: null, dy: 0, dx: 0, node: n };
+          lines.push(cur);
+        } else if (cur.text.trim() === '') {
+          cur.node = n;   // 行首 tspan 提供该行的样式
+        }
+        if (hasX && cur.x === null) cur.x = parseFloat(n.getAttribute('x'));
+        if (hasY && cur.y === null) cur.y = parseFloat(n.getAttribute('y'));
+        if (Math.abs(dy) > 0.001) cur.dy = dy;
+        if (Math.abs(dx) > 0.001) cur.dx += dx;
+        consume(n);
+      }
+    }
+    consume(el);
+    var out = [];
+    for (var k = 0; k < lines.length; k++) {
+      var t = (lines[k].text || '').replace(/\s+/g, ' ').trim();
+      if (t) out.push({
+        text: t, x: lines[k].x, y: lines[k].y,
+        dy: lines[k].dy, dx: lines[k].dx, node: lines[k].node
+      });
+    }
+    return out;
+  }
+  function emitText(el, m, ctx) {
+    var lines = textLinesOf(el);
+    if (!lines.length) return;
+    var baseX = parseFloat(el.getAttribute('x'));
+    if (!isFinite(baseX)) baseX = 0;
+    var baseY = parseFloat(el.getAttribute('y'));
+    if (!isFinite(baseY)) baseY = 0;
+    var s = matScale(m);
+    var curX = baseX, curY = baseY, prevAdv = 0;
+    for (var i = 0; i < lines.length; i++) {
+      var L = lines[i];
+      var cs = ctx.cs(L.node);
+      var names = fontFamilies(cs);
+      var sizeLocal = parseFloat(cs.fontSize);
+      if (!isFinite(sizeLocal) || sizeLocal <= 0) sizeLocal = 16;
+      var weight = String(cs.fontWeight || '400');
+      var bold = /^(bold|bolder|[6-9]00)$/i.test(weight) || parseInt(weight, 10) >= 600;
+      var italic = /^(italic|oblique)$/i.test(cs.fontStyle || '');
+      var anchor = cs.textAnchor || el.getAttribute('text-anchor') || 'start';
+      if (anchor !== 'middle' && anchor !== 'end') anchor = 'start';
+      var paint = getFill(L.node, ctx, false);
+      if (!paint) continue;
+      if (L.x !== null && isFinite(L.x)) curX = L.x;
+      else if (i > 0) curX += prevAdv;      // 续行：从上一行文字末尾继续
+      if (L.dx) curX += L.dx;
+      if (L.y !== null && isFinite(L.y)) curY = L.y;
+      else if (L.dy) curY += L.dy;
+
+      var adv = 0;
+      var nodeText = (L.node.textContent || '').replace(/\s+/g, ' ').trim();
+      if (nodeText === L.text) {
+        try { adv = L.node.getComputedTextLength(); } catch (e) { adv = 0; }
+      }
+      if (!(adv > 0)) adv = measureTextWidth(names, sizeLocal, weight, italic, L.text);
+      prevAdv = adv;
+      var sizePx = sizeLocal * s;
+      var boxW = Math.max(adv * s, 1);
+      var ascent = measureAscent(names, sizePx, L.text);
+      var boxH = Math.max(sizePx * 1.25, 1);
+      var A = matApply(m, curX, curY);
+      var dxC = (anchor === 'middle' ? -boxW / 2 : (anchor === 'end' ? -boxW : 0)) + boxW / 2;
+      var dyC = -ascent + boxH / 2;
+      var rot = 0, center;
+      if (matIsAxis(m)) {
+        center = [A[0] + dxC, A[1] + dyC];
+      } else if (matIsSimilar(m)) {
+        rot = matRotation(m);
+        var rad = rot * Math.PI / 180, cos = Math.cos(rad), sin = Math.sin(rad);
+        center = [A[0] + dxC * cos - dyC * sin, A[1] + dxC * sin + dyC * cos];
+      } else {
+        ctx.warn('<text>', '文字处于错切变换下，位置可能略有偏差');
+        center = [A[0] + dxC, A[1] + dyC];
+      }
+      ctx.stats.text++;
+      ctx.push({
+        type: 'text',
+        x: center[0] - boxW / 2, y: center[1] - boxH / 2, w: boxW, h: boxH, rot: rot,
+        align: anchor === 'middle' ? 'ctr' : (anchor === 'end' ? 'r' : 'l'),
+        lines: [L.text],
+        sizePt: sizePx * 0.75,
+        bold: bold, italic: italic,
+        latin: names[0],
+        ea: (hasCJK(L.text) ? pickCJK(names) : names[0]),
+        fill: paint
+      });
+    }
+  }
+  function pickCJK(names) {
+    for (var i = 0; i < names.length; i++) {
+      if (/yahei|simhei|simsun|heiti|song|hei|pingfang|noto sans (sc|cjk)|source han|微软雅黑|黑体|宋体/i.test(names[i])) return names[i];
+    }
+    return 'Microsoft YaHei';
+  }
+
+  /* =====================================================================
+     PPTX 打包：DrawingML + store-only ZIP
+     ===================================================================== */
+  var CRC_TABLE = (function () {
+    var t = new Uint32Array(256);
+    for (var n = 0; n < 256; n++) {
+      var c = n;
+      for (var k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xEDB88320 : c >>> 1;
+      t[n] = c >>> 0;
+    }
+    return t;
+  })();
+  function crc32(bytes) {
+    var c = 0xFFFFFFFF;
+    for (var i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+    return (c ^ 0xFFFFFFFF) >>> 0;
+  }
+  function utf8(str) { return new TextEncoder().encode(str); }
+  function zipStore(files) {
+    var chunks = [], central = [], offset = 0;
+    for (var i = 0; i < files.length; i++) {
+      var nameBytes = utf8(files[i].name);
+      var data = typeof files[i].data === 'string' ? utf8(files[i].data) : files[i].data;
+      var crc = crc32(data);
+      var lh = new Uint8Array(30);
+      var lv = new DataView(lh.buffer);
+      lv.setUint32(0, 0x04034B50, true);
+      lv.setUint16(4, 20, true);
+      lv.setUint16(6, 0x0800, true);
+      lv.setUint16(8, 0, true);
+      lv.setUint32(14, crc, true);
+      lv.setUint32(18, data.length, true);
+      lv.setUint32(22, data.length, true);
+      lv.setUint16(26, nameBytes.length, true);
+      chunks.push(lh, nameBytes, data);
+      var cd = new Uint8Array(46);
+      var cv = new DataView(cd.buffer);
+      cv.setUint32(0, 0x02014B50, true);
+      cv.setUint16(4, 20, true);
+      cv.setUint16(6, 20, true);
+      cv.setUint16(8, 0x0800, true);
+      cv.setUint16(10, 0, true);
+      cv.setUint32(16, crc, true);
+      cv.setUint32(20, data.length, true);
+      cv.setUint32(24, data.length, true);
+      cv.setUint16(28, nameBytes.length, true);
+      cv.setUint32(42, offset, true);
+      central.push(cd, nameBytes);
+      offset += 30 + nameBytes.length + data.length;
+    }
+    var cdBuf = concat(central);
+    var eocd = new Uint8Array(22);
+    var ev = new DataView(eocd.buffer);
+    ev.setUint32(0, 0x06054B50, true);
+    ev.setUint16(8, files.length, true);
+    ev.setUint16(10, files.length, true);
+    ev.setUint32(12, cdBuf.length, true);
+    ev.setUint32(16, offset, true);
+    return concat(chunks.concat([cdBuf, eocd]));
+  }
+  function concat(parts) {
+    var total = 0, i;
+    for (i = 0; i < parts.length; i++) total += parts[i].length;
+    var out = new Uint8Array(total), at = 0;
+    for (i = 0; i < parts.length; i++) { out.set(parts[i], at); at += parts[i].length; }
+    return out;
+  }
+
+  var NS_DECL = 'xmlns:a="http://schemas.openxmlformats.org/drawingml/2006/main" ' +
+    'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships" ' +
+    'xmlns:p="http://schemas.openxmlformats.org/presentationml/2006/main"';
+
+  function contentTypesXml(slideCount) {
+    var out = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+      '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">',
+      '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>',
+      '<Default Extension="xml" ContentType="application/xml"/>',
+      '<Override PartName="/ppt/presentation.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.presentation.main+xml"/>',
+      '<Override PartName="/ppt/slideMasters/slideMaster1.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideMaster+xml"/>'];
+    for (var i = 1; i <= 11; i++) {
+      out.push('<Override PartName="/ppt/slideLayouts/slideLayout' + i + '.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slideLayout+xml"/>');
+    }
+    out.push('<Override PartName="/ppt/theme/theme1.xml" ContentType="application/vnd.openxmlformats-officedocument.theme+xml"/>');
+    for (var k = 1; k <= slideCount; k++) {
+      out.push('<Override PartName="/ppt/slides/slide' + k + '.xml" ContentType="application/vnd.openxmlformats-officedocument.presentationml.slide+xml"/>');
+    }
+    out.push('</Types>');
+    return out.join('');
+  }
+  function rootRelsXml() {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="ppt/presentation.xml"/>' +
+      '</Relationships>';
+  }
+  function presentationXml(slideCount, emuW, emuH) {
+    var ids = [];
+    for (var i = 0; i < slideCount; i++) ids.push('<p:sldId id="' + (256 + i) + '" r:id="rId' + (2 + i) + '"/>');
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<p:presentation ' + NS_DECL + ' saveSubsetFonts="1">' +
+      '<p:sldMasterIdLst><p:sldMasterId id="2147483648" r:id="rId1"/></p:sldMasterIdLst>' +
+      '<p:sldIdLst>' + ids.join('') + '</p:sldIdLst>' +
+      '<p:sldSz cx="' + emuW + '" cy="' + emuH + '"/><p:notesSz cx="6858000" cy="9144000"/>' +
+      '<p:defaultTextStyle><a:defPPr><a:defRPr lang="zh-CN"/></a:defPPr></p:defaultTextStyle>' +
+      '</p:presentation>';
+  }
+  function presentationRelsXml(slideCount) {
+    var out = ['<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">',
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideMaster" Target="slideMasters/slideMaster1.xml"/>'];
+    for (var i = 0; i < slideCount; i++) {
+      out.push('<Relationship Id="rId' + (2 + i) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slide" Target="slides/slide' + (i + 1) + '.xml"/>');
+    }
+    out.push('<Relationship Id="rId' + (2 + slideCount) + '" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/theme" Target="theme/theme1.xml"/>');
+    out.push('</Relationships>');
+    return out.join('');
+  }
+  function slideRelsXml(layoutNo) {
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+      '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/slideLayout" Target="../slideLayouts/slideLayout' + layoutNo + '.xml"/>' +
+      '</Relationships>';
+  }
+
+  function fillXml(fill) {
+    if (!fill) return '<a:noFill/>';
+    var a = clamp(fill.alpha === undefined ? 1 : fill.alpha, 0, 1);
+    if (a <= 0.001) return '<a:noFill/>';
+    return '<a:solidFill><a:srgbClr val="' + fill.hex + '">' +
+      (a < 0.999 ? '<a:alpha val="' + Math.round(a * 100000) + '"/>' : '') +
+      '</a:srgbClr></a:solidFill>';
+  }
+  function lineXml(stroke) {
+    if (!stroke || !(stroke.width > 0)) return '<a:ln><a:noFill/></a:ln>';
+    var w = Math.max(9525, Math.round(stroke.width * EMU_PER_PX));
+    var out = '<a:ln w="' + w + '"' + (stroke.cap && stroke.cap !== 'flat' ? ' cap="' + stroke.cap + '"' : '') + '>' +
+      fillXml({ hex: stroke.hex, alpha: stroke.alpha });
+    if (stroke.prstDash) out += '<a:prstDash val="' + stroke.prstDash + '"/>';
+    if (stroke.join) out += '<a:' + stroke.join + '/>';
+    var asz = (stroke.arrows && stroke.arrows.size) || 'med';
+    if (stroke.arrows && stroke.arrows.start) out += '<a:headEnd type="triangle" w="' + asz + '" len="' + asz + '"/>';
+    if (stroke.arrows && stroke.arrows.end) out += '<a:tailEnd type="triangle" w="' + asz + '" len="' + asz + '"/>';
+    out += '</a:ln>';
+    return out;
+  }
+  function xfrmXml(x, y, w, h, rot, flipH, flipV) {
+    var cx = Math.max(1, Math.round(w * EMU_PER_PX));
+    var cy = Math.max(1, Math.round(h * EMU_PER_PX));
+    return '<a:xfrm' + (rot ? ' rot="' + Math.round(rot * 60000) + '"' : '') +
+      (flipH ? ' flipH="1"' : '') + (flipV ? ' flipV="1"' : '') + '>' +
+      '<a:off x="' + Math.round(x * EMU_PER_PX) + '" y="' + Math.round(y * EMU_PER_PX) + '"/>' +
+      '<a:ext cx="' + cx + '" cy="' + cy + '"/></a:xfrm>';
+  }
+  function boundsOf(pts) {
+    var minx = Infinity, miny = Infinity, maxx = -Infinity, maxy = -Infinity;
+    for (var i = 0; i < pts.length; i++) {
+      var p = pts[i];
+      if (p[0] < minx) minx = p[0];
+      if (p[0] > maxx) maxx = p[0];
+      if (p[1] < miny) miny = p[1];
+      if (p[1] > maxy) maxy = p[1];
+    }
+    return { x: minx, y: miny, w: Math.max(maxx - minx, 0), h: Math.max(maxy - miny, 0) };
+  }
+  function custGeomXml(pts, closed) {
+    var b = boundsOf(pts);
+    var pw = Math.max(1, Math.round(b.w * EMU_PER_PX));
+    var ph = Math.max(1, Math.round(b.h * EMU_PER_PX));
+    var path = '<a:path w="' + pw + '" h="' + ph + '">';
+    for (var i = 0; i < pts.length; i++) {
+      var px = clamp(Math.round((pts[i][0] - b.x) * EMU_PER_PX), 0, pw);
+      var py = clamp(Math.round((pts[i][1] - b.y) * EMU_PER_PX), 0, ph);
+      path += (i === 0
+        ? '<a:moveTo><a:pt x="' + px + '" y="' + py + '"/></a:moveTo>'
+        : '<a:lnTo><a:pt x="' + px + '" y="' + py + '"/></a:lnTo>');
+    }
+    if (closed) path += '<a:close/>';
+    path += '</a:path>';
+    return {
+      box: b,
+      xml: '<a:custGeom><a:avLst/><a:gdLst/><a:ahLst/><a:cxnLst/>' +
+        '<a:rect l="0" t="0" r="r" b="b"/><a:pathLst>' + path + '</a:pathLst></a:custGeom>'
+    };
+  }
+  function shapeXml(sh, id, name) {
+    var geom, box, rot = sh.rot || 0;
+    if (sh.type === 'poly') {
+      var g = custGeomXml(sh.pts, sh.closed);
+      geom = g.xml;
+      box = g.box;
+    } else if (sh.type === 'line') {
+      geom = '<a:prstGeom prst="line"><a:avLst/></a:prstGeom>';
+      box = sh;
+    } else {
+      var prst = sh.prst === 'roundRect' ? 'roundRect' : (sh.prst === 'ellipse' ? 'ellipse' : 'rect');
+      geom = '<a:prstGeom prst="' + prst + '"><a:avLst>' +
+        (prst === 'roundRect' ? '<a:gd name="adj" fmla="val ' + Math.round(sh.adj || 0) + '"/>' : '') +
+        '</a:avLst></a:prstGeom>';
+      box = sh;
+    }
+    var spPr = '<p:spPr>' +
+      xfrmXml(box.x, box.y, box.w, box.h, rot, sh.flipH, sh.flipV) +
+      geom +
+      (sh.type === 'line' ? '<a:noFill/>' : fillXml(sh.fill)) +
+      lineXml(sh.stroke) +
+      '</p:spPr>';
+    return '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="' + escXml(name) + '"/>' +
+      '<p:cNvSpPr/><p:nvPr/></p:nvSpPr>' + spPr +
+      '<p:txBody><a:bodyPr/><a:lstStyle/><a:p/></p:txBody></p:sp>';
+  }
+  function textShapeXml(sh, id, name) {
+    var spPr = '<p:spPr>' +
+      xfrmXml(sh.x, sh.y, sh.w, sh.h, sh.rot, false, false) +
+      '<a:prstGeom prst="rect"><a:avLst/></a:prstGeom><a:noFill/><a:ln><a:noFill/></a:ln></p:spPr>';
+    var sz = Math.max(100, Math.round(sh.sizePt * 100));
+    var rPr = '<a:rPr lang="zh-CN" altLang="en-US" sz="' + sz + '"' +
+      (sh.bold ? ' b="1"' : '') + (sh.italic ? ' i="1"' : '') + ' dirty="0">' +
+      fillXml(sh.fill) +
+      '<a:latin typeface="' + escXml(sh.latin) + '"/>' +
+      (sh.ea ? '<a:ea typeface="' + escXml(sh.ea) + '"/>' : '') +
+      '</a:rPr>';
+    var paras = [];
+    for (var i = 0; i < sh.lines.length; i++) {
+      paras.push('<a:p><a:pPr algn="' + sh.align + '">' +
+        '<a:lnSpc><a:spcPct val="100000"/></a:lnSpc>' +
+        '<a:spcBef><a:spcPts val="0"/></a:spcBef><a:spcAft><a:spcPts val="0"/></a:spcAft>' +
+        '<a:buNone/></a:pPr>' +
+        '<a:r>' + rPr + '<a:t>' + escXml(sh.lines[i]) + '</a:t></a:r></a:p>');
+    }
+    return '<p:sp><p:nvSpPr><p:cNvPr id="' + id + '" name="' + escXml(name) + '"/>' +
+      '<p:cNvSpPr txBox="1"/><p:nvPr/></p:nvSpPr>' + spPr +
+      '<p:txBody><a:bodyPr wrap="none" lIns="0" tIns="0" rIns="0" bIns="0" anchor="t"><a:noAutofit/></a:bodyPr>' +
+      '<a:lstStyle/>' + paras.join('') + '</p:txBody></p:sp>';
+  }
+  function slideXml(slide) {
+    var parts = [];
+    var id = 1;
+    for (var i = 0; i < slide.shapes.length; i++) {
+      var sh = slide.shapes[i];
+      id++;
+      if (sh.type === 'text') parts.push(textShapeXml(sh, id, 'TextBox ' + id));
+      else if (sh.type === 'poly') parts.push(shapeXml(sh, id, 'Freeform ' + id));
+      else if (sh.type === 'line') parts.push(shapeXml(sh, id, 'Connector ' + id));
+      else if (sh.prst === 'ellipse') parts.push(shapeXml(sh, id, 'Ellipse ' + id));
+      else parts.push(shapeXml(sh, id, (sh.prst === 'roundRect' ? 'Rounded Rectangle ' : 'Rectangle ') + id));
+    }
+    return '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+      '<p:sld ' + NS_DECL + '><p:cSld><p:spTree>' +
+      '<p:nvGrpSpPr><p:cNvPr id="1" name=""/><p:cNvGrpSpPr/><p:nvPr/></p:nvGrpSpPr><p:grpSpPr/>' +
+      parts.join('') +
+      '</p:spTree></p:cSld><p:clrMapOvr><a:masterClrMapping/></p:clrMapOvr></p:sld>';
+  }
+
+  function scaleShapes(shapes, s, dx, dy) {
+    for (var i = 0; i < shapes.length; i++) {
+      var sh = shapes[i];
+      sh.x = sh.x * s + dx;
+      sh.y = sh.y * s + dy;
+      if (sh.w !== undefined) sh.w *= s;
+      if (sh.h !== undefined) sh.h *= s;
+      if (sh.type === 'poly') {
+        for (var k = 0; k < sh.pts.length; k++) {
+          sh.pts[k] = [sh.pts[k][0] * s + dx, sh.pts[k][1] * s + dy];
+        }
+      }
+      if (sh.type === 'text') sh.sizePt *= s;
+      if (sh.stroke) sh.stroke.width *= s;
+    }
+  }
+
+  function buildPptx(slides) {
+    var first = slides[0];
+    var emuW = Math.round(first.canvas.w * EMU_PER_PX);
+    var emuH = Math.round(first.canvas.h * EMU_PER_PX);
+    var notes = [];
+    for (var i = 1; i < slides.length; i++) {
+      var cv = slides[i].canvas;
+      if (Math.abs(cv.w - first.canvas.w) > 0.5 || Math.abs(cv.h - first.canvas.h) > 0.5) {
+        var s = Math.min(first.canvas.w / cv.w, first.canvas.h / cv.h);
+        var dx = (first.canvas.w - cv.w * s) / 2, dy = (first.canvas.h - cv.h * s) / 2;
+        scaleShapes(slides[i].shapes, s, dx, dy);
+        notes.push({
+          tag: '第 ' + (i + 1) + ' 页', reason: '画布 ' + round2(cv.w) + '×' + round2(cv.h) +
+            ' 与第一页不同，已等比缩放居中'
+        });
+        slides[i].canvas = { w: first.canvas.w, h: first.canvas.h };
+      }
+    }
+    var files = [];
+    for (var k = 0; k < TEMPLATE_PARTS.length; k++) files.push(TEMPLATE_PARTS[k]);
+    files.push({ name: '[Content_Types].xml', data: contentTypesXml(slides.length) });
+    files.push({ name: '_rels/.rels', data: rootRelsXml() });
+    files.push({ name: 'ppt/presentation.xml', data: presentationXml(slides.length, emuW, emuH) });
+    files.push({ name: 'ppt/_rels/presentation.xml.rels', data: presentationRelsXml(slides.length) });
+    for (var n = 0; n < slides.length; n++) {
+      files.push({ name: 'ppt/slides/slide' + (n + 1) + '.xml', data: slideXml(slides[n]) });
+      files.push({ name: 'ppt/slides/_rels/slide' + (n + 1) + '.xml.rels', data: slideRelsXml(7) });
+    }
+    return { bytes: zipStore(files), notes: notes };
+  }
+
+  /* ===================== 转换主流程 ===================== */
+  var measureHost = $('measure');
+
+  function convertOne(name, src, opts) {
+    var el = parseSvg(src);
+    if (opts.safe) sanitize(el);
+    var live = document.importNode(el, true);
+    measureHost.appendChild(live);
+    var result;
+    try {
+      result = extractSlide(live, opts);
+    } finally {
+      measureHost.removeChild(live);
+    }
+    result.name = name;
+    return result;
+  }
+
+  function convertAll(items, opts) {
+    var slides = [], warnings = [];
+    if (!items || !items.length) throw new Error('没有可转换的 SVG 内容');
+    for (var i = 0; i < items.length; i++) {
+      var sl;
+      try {
+        sl = convertOne(items[i].name, items[i].text, opts);
+      } catch (e) {
+        throw new Error('第 ' + (i + 1) + ' 页《' + items[i].name + '》解析失败：' + e.message);
+      }
+      slides.push(sl);
+      sl.origCanvas = { w: sl.canvas.w, h: sl.canvas.h };
+      for (var k = 0; k < sl.warnings.length; k++) {
+        warnings.push({
+          page: i + 1, tag: sl.warnings[k].tag,
+          reason: sl.warnings[k].reason, count: sl.warnings[k].count
+        });
+      }
+    }
+    var built = buildPptx(slides);
+    for (var j = 0; j < built.notes.length; j++) {
+      warnings.push({ page: 0, tag: built.notes[j].tag, reason: built.notes[j].reason, count: 1 });
+    }
+    var stats = { rect: 0, ellipse: 0, poly: 0, line: 0, text: 0 };
+    for (var s2 = 0; s2 < slides.length; s2++) {
+      var st = slides[s2].stats;
+      stats.rect += st.rect; stats.ellipse += st.ellipse; stats.poly += st.poly;
+      stats.line += st.line; stats.text += st.text;
+    }
+    return {
+      bytes: built.bytes,
+      blob: new Blob([built.bytes], { type: 'application/vnd.openxmlformats-officedocument.presentationml.presentation' }),
+      slides: slides, warnings: warnings, stats: stats
+    };
+  }
+
+  /* ===================== 界面 ===================== */
+  var code = $('code'), holder = $('holder'), stage = $('stage'), empty = $('empty');
+  var errorbox = $('errorbox'), errortext = $('errortext'), infoEl = $('info'), statusEl = $('status');
+  var filesEl = $('files'), warnPanel = $('warnPanel'), warnList = $('warnList'), warnCount = $('warnCount');
+  var safeMode = $('safeMode'), toleranceSel = $('tolerance');
+  var fileInput = $('fileInput'), dirInput = $('dirInput'), splitter = $('splitter'), main = $('main');
+  var doc = { files: [], selected: 0 };
+  var zoom = null, currentSvg = null, intrinsic = { w: 300, h: 150 };
+  var lastExtract = null, renderTimer = null, saveTimer = null;
+
+  function setStatus(msg, kind) {
+    statusEl.textContent = msg;
+    statusEl.className = kind || '';
+  }
+  function currentFile() { return doc.files[doc.selected] || null; }
+  function opts() {
+    return { safe: safeMode.checked, tolerance: parseFloat(toleranceSel.value) || 0.25 };
+  }
+  function download(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    setStatus('已导出 ' + name, 'ok');
+  }
+  function baseName(name) {
+    return String(name || 'svg').replace(/\.(svg|xml|txt)$/i, '').replace(/[\\/:*?"<>|]+/g, '_') || 'svg';
+  }
+  function summary(title, rows) {
+    $('sumTitle').textContent = title;
+    var t = $('sumTable');
+    t.innerHTML = '';
+    for (var i = 0; i < rows.length; i++) {
+      var tr = document.createElement('tr');
+      var td1 = document.createElement('td'); td1.textContent = rows[i][0];
+      var td2 = document.createElement('td'); td2.textContent = rows[i][1];
+      tr.appendChild(td1); tr.appendChild(td2);
+      t.appendChild(tr);
+    }
+    $('summary').hidden = false;
+  }
+
+  /* ---- 文件列表 ---- */
+  function renderFiles() {
+    filesEl.innerHTML = '';
+    for (var i = 0; i < doc.files.length; i++) {
+      (function (i) {
+        var f = doc.files[i];
+        var chip = document.createElement('div');
+        chip.className = 'chip' + (i === doc.selected ? ' active' : '');
+        var idx = document.createElement('span');
+        idx.className = 'idx';
+        idx.textContent = 'P' + (i + 1);
+        var nm = document.createElement('span');
+        nm.className = 'nm';
+        nm.textContent = f.name;
+        nm.title = f.name + '  ·  ' + (f.text || '').length + ' 字符';
+        chip.appendChild(idx); chip.appendChild(nm);
+        var up = document.createElement('button');
+        up.className = 'mv'; up.textContent = '↑'; up.title = '上移';
+        up.onclick = function (e) { e.stopPropagation(); moveFile(i, -1); };
+        var down = document.createElement('button');
+        down.className = 'mv'; down.textContent = '↓'; down.title = '下移';
+        down.onclick = function (e) { e.stopPropagation(); moveFile(i, 1); };
+        var del = document.createElement('button');
+        del.textContent = '✕'; del.title = '移除';
+        del.onclick = function (e) { e.stopPropagation(); removeFile(i); };
+        chip.appendChild(up); chip.appendChild(down); chip.appendChild(del);
+        chip.onclick = function () { selectFile(i); };
+        filesEl.appendChild(chip);
+      })(i);
+    }
+  }
+  function moveFile(i, dir) {
+    var j = i + dir;
+    if (j < 0 || j >= doc.files.length) return;
+    var tmp = doc.files[i];
+    doc.files[i] = doc.files[j];
+    doc.files[j] = tmp;
+    if (doc.selected === i) doc.selected = j;
+    else if (doc.selected === j) doc.selected = i;
+    renderFiles(); saveDraft(); render(true);
+  }
+  function removeFile(i) {
+    doc.files.splice(i, 1);
+    if (doc.selected >= doc.files.length) doc.selected = Math.max(0, doc.files.length - 1);
+    code.value = currentFile() ? currentFile().text : '';
+    renderFiles(); saveDraft(); render(true);
+    setStatus('已移除该文件', 'warn');
+  }
+  function selectFile(i) {
+    if (i < 0 || i >= doc.files.length) return;
+    doc.selected = i;
+    code.value = doc.files[i].text;
+    renderFiles(); render(true); saveDraft();
+  }
+  function addFiles(list) {
+    if (!list.length) return;
+    var added = 0, skipped = 0;
+    for (var i = 0; i < list.length; i++) {
+      if (!/\.svg$/i.test(list[i].name) && !/\.xml$/i.test(list[i].name)) { skipped++; continue; }
+      doc.files.push({ name: list[i].name, text: list[i].text });
+      added++;
+    }
+    if (!doc.files.length) {
+      setStatus('没有可用的 .svg 文件（位图无法转成可编辑形状）', 'warn');
+      return;
+    }
+    if (doc.selected >= doc.files.length) doc.selected = 0;
+    code.value = currentFile().text;
+    renderFiles(); saveDraft(); render(true);
+    setStatus('已加入 ' + added + ' 个文件' + (skipped ? '（忽略 ' + skipped + ' 个非 SVG 文件）' : ''), 'ok');
+  }
+  function readFiles(fileList) {
+    var arr = Array.prototype.slice.call(fileList || []);
+    if (!arr.length) return;
+    var out = [], pending = arr.length;
+    arr.forEach(function (f, idx) {
+      var r = new FileReader();
+      r.onload = function () {
+        out[idx] = { name: f.name, text: String(r.result || '') };
+        if (--pending === 0) addFiles(out.filter(Boolean));
+      };
+      r.onerror = function () {
+        if (--pending === 0) addFiles(out.filter(Boolean));
+      };
+      r.readAsText(f);
+    });
+  }
+
+  /* ---- 草稿 ---- */
+  function saveDraft() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try {
+        var payload = JSON.stringify({ files: doc.files, selected: doc.selected });
+        if (payload.length > LS_LIMIT) { localStorage.removeItem(LS_KEY); return; }
+        localStorage.setItem(LS_KEY, payload);
+      } catch (e) { /* 无痕模式忽略 */ }
+    }, 400);
+  }
+  function loadDraft() {
+    try {
+      var raw = localStorage.getItem(LS_KEY);
+      if (!raw) return null;
+      var o = JSON.parse(raw);
+      if (!o || !o.files || !o.files.length) return null;
+      return o;
+    } catch (e) { return null; }
+  }
+
+  /* ---- 渲染预览 ---- */
+  function showError(msg) {
+    currentSvg = null; lastExtract = null;
+    holder.innerHTML = '';
+    empty.hidden = true;
+    errortext.textContent = msg;
+    errorbox.hidden = false;
+    infoEl.textContent = '';
+    warnPanel.hidden = true;
+    setStatus('解析失败', 'err');
+  }
+  function applyZoom() {
+    var svg = holder.querySelector('svg');
+    if (!svg) return;
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    var z = (zoom === null) ? fitScale() : zoom;
+    svg.style.width = (intrinsic.w * z) + 'px';
+    svg.style.height = (intrinsic.h * z) + 'px';
+    updateZoomLabel();
+  }
+  function fitScale() {
+    var cw = stage.clientWidth - 36, ch = stage.clientHeight - 36;
+    if (!(cw > 0) || !(ch > 0) || !(intrinsic.w > 0) || !(intrinsic.h > 0)) return 1;
+    return clamp(Math.min(cw / intrinsic.w, ch / intrinsic.h), 0.02, 16);
+  }
+  function updateZoomLabel() {
+    var z = (zoom === null) ? fitScale() : zoom;
+    $('zoomLabel').textContent = (zoom === null ? '自适应 ' : '') + Math.round(z * 100) + '%';
+  }
+  function setZoom(v) {
+    zoom = (v === null) ? null : clamp(v, 0.05, 16);
+    applyZoom();
+  }
+  function zoomBy(f) {
+    var base = (zoom === null) ? fitScale() : zoom;
+    setZoom(base * f);
+  }
+  function renderPanelWarnings(warnings) {
+    if (!warnings || !warnings.length) { warnPanel.hidden = true; return; }
+    warnList.innerHTML = '';
+    for (var i = 0; i < warnings.length; i++) {
+      var li = document.createElement('li');
+      var b = document.createElement('b');
+      b.textContent = warnings[i].tag;
+      li.appendChild(b);
+      li.appendChild(document.createTextNode(' ' + warnings[i].reason + (warnings[i].count > 1 ? '（×' + warnings[i].count + '）' : '')));
+      warnList.appendChild(li);
+    }
+    warnCount.textContent = warnings.length + ' 条';
+    warnPanel.hidden = false;
+  }
+  function render(silent) {
+    var file = currentFile();
+    if (!file || !(file.text || '').trim()) {
+      currentSvg = null; lastExtract = null;
+      holder.innerHTML = '';
+      errorbox.hidden = true;
+      warnPanel.hidden = true;
+      empty.hidden = false;
+      infoEl.textContent = doc.files.length ? '当前文件为空' : '就绪';
+      renderFiles();
+      if (!silent) setStatus(doc.files.length ? '当前文件内容为空' : '等待输入', 'warn');
+      return;
+    }
+    var svg;
+    try {
+      svg = parseSvg(file.text);
+    } catch (e) {
+      showError(e.message);
+      renderFiles();
+      return;
+    }
+    if (opts().safe) sanitize(svg);
+    currentSvg = svg;
+    intrinsic = canvasSize(svg);
+    errorbox.hidden = true;
+    empty.hidden = true;
+    holder.innerHTML = '';
+    holder.appendChild(document.importNode(svg, true));
+    applyZoom();
+    renderFiles();
+
+    var extract = null, err = null;
+    try { extract = convertOne(file.name, file.text, opts()); } catch (e) { err = e; }
+    lastExtract = extract;
+    if (err) {
+      infoEl.textContent = '尺寸 ' + round2(intrinsic.w) + ' × ' + round2(intrinsic.h) + ' · 元素 ' + countElements(svg);
+      warnPanel.hidden = true;
+      setStatus('预览正常，但转换失败：' + err.message, 'err');
+      return;
+    }
+    var total = extract.shapes.length;
+    infoEl.textContent = 'P' + (doc.selected + 1) + '/' + doc.files.length + ' · ' + (file.name || '未命名') +
+      ' · 尺寸 ' + round2(extract.canvas.w) + ' × ' + round2(extract.canvas.h) +
+      ' · 元素 ' + countElements(svg) + ' · 将生成对象 ' + total;
+    renderPanelWarnings(extract.warnings);
+    setStatus('预览就绪 · 共 ' + doc.files.length + ' 页待导出', 'ok');
+  }
+  function scheduleRender() {
+    if (renderTimer) clearTimeout(renderTimer);
+    renderTimer = setTimeout(function () { render(true); }, 250);
+  }
+
+  /* ---- 导出 ---- */
+  function collectItems() {
+    var items = [];
+    for (var i = 0; i < doc.files.length; i++) {
+      if ((doc.files[i].text || '').trim()) items.push(doc.files[i]);
+    }
+    if (!items.length) setStatus('请先导入 SVG 文件或粘贴 SVG 代码', 'warn');
+    return items;
+  }
+  function exportPptx() {
+    var items = collectItems();
+    if (!items.length) return;
+    var out;
+    setStatus('正在转换…', '');
+    try {
+      out = convertAll(items, opts());
+    } catch (e) {
+      setStatus(e.message, 'err');
+      return;
+    }
+    var name = items.length === 1
+      ? baseName(items[0].name) + '.pptx'
+      : 'svg-to-pptx-' + stamp() + '.pptx';
+    download(out.blob, name);
+    var rows = [
+      ['文件', name],
+      ['幻灯片', out.slides.length + ' 页'],
+      ['矩形 / 圆角矩形', out.stats.rect + ' 个'],
+      ['圆 / 椭圆', out.stats.ellipse + ' 个'],
+      ['折线 / 自由曲线', out.stats.poly + ' 个'],
+      ['直线 / 连接线', out.stats.line + ' 个'],
+      ['文本框', out.stats.text + ' 个'],
+      ['警告', out.warnings.length + ' 条'],
+      ['体积', (out.bytes.length / 1024).toFixed(1) + ' KB']
+    ];
+    summary('已导出可编辑 PPTX', rows);
+  }
+  function exportSvg() {
+    if (!currentSvg) { setStatus('没有可导出的 SVG', 'warn'); return; }
+    var text = '<?xml version="1.0" encoding="UTF-8"?>\n' + serialize(currentSvg);
+    download(new Blob([text], { type: 'image/svg+xml;charset=utf-8' }), baseName(currentFile().name) + '.svg');
+  }
+  function exportPng() {
+    if (!currentSvg) { setStatus('没有可导出的 SVG', 'warn'); return; }
+    var scale = parseFloat($('pngScale').value) || 1;
+    var w = Math.max(1, Math.round(intrinsic.w * scale));
+    var h = Math.max(1, Math.round(intrinsic.h * scale));
+    if (w > 8192 || h > 8192) { setStatus('尺寸 ' + w + '×' + h + ' 过大，请降低 PNG 倍数', 'err'); return; }
+    var text = serialize(currentSvg, { w: w, h: h });
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = w; canvas.height = h;
+      var c = canvas.getContext('2d');
+      var mode = stage.getAttribute('data-bg');
+      var bg = mode === 'white' ? '#ffffff' : mode === 'black' ? '#000000' : mode === 'gray' ? '#808080' : null;
+      if (bg) { c.fillStyle = bg; c.fillRect(0, 0, w, h); }
+      c.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function (blob) {
+        if (!blob) { setStatus('PNG 导出失败', 'err'); return; }
+        download(blob, baseName(currentFile().name) + '.png');
+      }, 'image/png');
+    };
+    img.onerror = function () { setStatus('PNG 导出失败：SVG 可能引用了外部资源', 'err'); };
+    img.src = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
+  }
+
+  /* ===================== 事件绑定 ===================== */
+  code.addEventListener('input', function () {
+    var f = currentFile();
+    if (f) f.text = code.value;
+    else if (code.value.trim()) {
+      doc.files.push({ name: '粘贴的代码.svg', text: code.value });
+      doc.selected = doc.files.length - 1;
+    }
+    saveDraft();
+    scheduleRender();
+  });
+  code.addEventListener('keydown', function (e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var s = this.selectionStart, en = this.selectionEnd;
+      this.value = this.value.slice(0, s) + '  ' + this.value.slice(en);
+      this.selectionStart = this.selectionEnd = s + 2;
+      var f = currentFile(); if (f) f.text = this.value;
+      saveDraft();
+    }
+  });
+  $('btnRender2') && $('btnRender2').addEventListener('click', function () { render(); });
+  $('btnPptx').addEventListener('click', exportPptx);
+  $('btnPng').addEventListener('click', exportPng);
+  $('btnSvg').addEventListener('click', exportSvg);
+  $('btnOpen').addEventListener('click', function () { fileInput.click(); });
+  $('btnDir').addEventListener('click', function () { dirInput.click(); });
+  fileInput.addEventListener('change', function () {
+    readFiles(fileInput.files);
+    fileInput.value = '';
+  });
+  dirInput.addEventListener('change', function () {
+    readFiles(dirInput.files);
+    dirInput.value = '';
+  });
+  $('btnPaste').addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      setStatus('当前环境不支持读取剪贴板，请直接 Ctrl+V 粘贴', 'err');
+      return;
+    }
+    navigator.clipboard.readText().then(function (text) {
+      if (!text || !text.trim()) { setStatus('剪贴板为空', 'warn'); return; }
+      doc.files.push({ name: '剪贴板.svg', text: text });
+      doc.selected = doc.files.length - 1;
+      code.value = text;
+      renderFiles(); saveDraft(); render(true);
+      setStatus('已从剪贴板导入', 'ok');
+    }, function () { setStatus('读取剪贴板被拒绝，请直接 Ctrl+V 粘贴', 'err'); });
+  });
+  $('btnSample').addEventListener('click', function () {
+    var has = doc.files.some(function (f) { return f.name === '示例-流程.svg'; });
+    if (!has) doc.files.push({ name: '示例-流程.svg', text: SAMPLE });
+    doc.selected = doc.files.length - 1;
+    code.value = currentFile().text;
+    renderFiles(); saveDraft(); render(true);
+    setStatus('已载入示例', 'ok');
+  });
+  $('btnClear').addEventListener('click', function () {
+    doc.files = []; doc.selected = 0; code.value = '';
+    renderFiles(); saveDraft(); render(true);
+    code.focus();
+  });
+  $('sumClose').addEventListener('click', function () { $('summary').hidden = true; });
+  $('summary').addEventListener('click', function (e) { if (e.target === this) this.hidden = true; });
+  safeMode.addEventListener('change', function () { render(true); saveDraft(); });
+  toleranceSel.addEventListener('change', function () { render(true); });
+  $('zoomFit').addEventListener('click', function () { setZoom(null); });
+  $('zoom100').addEventListener('click', function () { setZoom(1); });
+  $('zoomIn').addEventListener('click', function () { zoomBy(1.25); });
+  $('zoomOut').addEventListener('click', function () { zoomBy(0.8); });
+  stage.addEventListener('wheel', function (e) {
+    if (!currentSvg) return;
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1.12 : 0.89);
+  }, { passive: false });
+  window.addEventListener('resize', function () { if (zoom === null) updateZoomLabel(); });
+
+  var swatches = document.querySelectorAll('.swatch');
+  for (var si = 0; si < swatches.length; si++) {
+    swatches[si].addEventListener('click', function () {
+      stage.setAttribute('data-bg', this.getAttribute('data-bg'));
+      for (var k = 0; k < swatches.length; k++) swatches[k].classList.remove('active');
+      this.classList.add('active');
+    });
+  }
+
+  /* ---- 分栏拖动 ---- */
+  var dragging = false;
+  splitter.addEventListener('pointerdown', function (e) {
+    dragging = true;
+    splitter.classList.add('active');
+    document.body.style.userSelect = 'none';
+    if (splitter.setPointerCapture) splitter.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  splitter.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var rect = main.getBoundingClientRect();
+    var pct = clamp((e.clientX - rect.left) / rect.width * 100, 15, 85);
+    main.style.gridTemplateColumns = 'calc(' + pct + '% - 3px) 6px calc(' + (100 - pct) + '% - 3px)';
+  });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove('active');
+    document.body.style.userSelect = '';
+    if (e && splitter.releasePointerCapture && e.pointerId !== undefined) {
+      try { splitter.releasePointerCapture(e.pointerId); } catch (err) { }
+    }
+  }
+  splitter.addEventListener('pointerup', endDrag);
+  splitter.addEventListener('pointercancel', endDrag);
+
+  /* ---- 拖放 ---- */
+  var dragDepth = 0;
+  window.addEventListener('dragenter', function (e) { e.preventDefault(); dragDepth++; $('dropmask').classList.add('show'); });
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) $('dropmask').classList.remove('show');
+  });
+  window.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dragDepth = 0;
+    $('dropmask').classList.remove('show');
+    var dt = e.dataTransfer;
+    if (!dt) return;
+    if (dt.files && dt.files.length) {
+      var bad = 0;
+      for (var i = 0; i < dt.files.length; i++) {
+        if (!/\.(svg|xml)$/i.test(dt.files[i].name)) bad++;
+      }
+      if (bad === dt.files.length) {
+        setStatus('请拖入 .svg 文件（位图无法转成可编辑形状）', 'warn');
+        return;
+      }
+      readFiles(dt.files);
+      return;
+    }
+    var text = dt.getData('text/plain');
+    if (text && text.trim()) {
+      doc.files.push({ name: '拖入的代码.svg', text: text });
+      doc.selected = doc.files.length - 1;
+      code.value = text;
+      renderFiles(); saveDraft(); render(true);
+    }
+  });
+
+  /* ---- 快捷键 ---- */
+  window.addEventListener('keydown', function (e) {
+    if (!(e.ctrlKey || e.metaKey)) return;
+    var key = e.key.toLowerCase();
+    if (key === 's') { e.preventDefault(); exportPptx(); }
+    else if (key === 'o') { e.preventDefault(); fileInput.click(); }
+    else if (key === 'enter') { e.preventDefault(); render(); }
+    else if (key === '0') { e.preventDefault(); setZoom(null); }
+  });
+
+  /* ===================== 示例 / 启动 ===================== */
+  var SAMPLE = [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 660 240" width="660" height="240">',
+    '  <rect x="0" y="0" width="660" height="240" fill="#ffffff"/>',
+    '  <rect x="24" y="76" width="170" height="88" rx="16" fill="#1b3a6b" stroke="#0f2547" stroke-width="2"/>',
+    '  <rect x="245" y="76" width="170" height="88" rx="16" fill="#2563eb" stroke="#1b3a6b" stroke-width="2"/>',
+    '  <rect x="466" y="76" width="170" height="88" rx="16" fill="#0f766e" stroke="#0b4a45" stroke-width="2"/>',
+    '  <g font-family="Microsoft YaHei, Segoe UI, sans-serif" text-anchor="middle">',
+    '    <text x="109" y="112" font-size="19" font-weight="600" fill="#ffffff">SVG 文件 / 代码</text>',
+    '    <text x="109" y="136" font-size="13" fill="#9fc0ea">拖入或粘贴</text>',
+    '    <text x="330" y="112" font-size="19" font-weight="600" fill="#ffffff">浏览器内解析</text>',
+    '    <text x="330" y="136" font-size="13" fill="#c7dbff">几何 + 样式</text>',
+    '    <text x="551" y="112" font-size="19" font-weight="600" fill="#ffffff">可编辑 PPTX</text>',
+    '    <text x="551" y="136" font-size="13" fill="#a7e8dd">原生形状 + 文本框</text>',
+    '  </g>',
+    '  <line x1="196" y1="120" x2="243" y2="120" stroke="#334155" stroke-width="3"/>',
+    '  <polygon points="243,120 231,114 231,126" fill="#334155"/>',
+    '  <line x1="417" y1="120" x2="464" y2="120" stroke="#334155" stroke-width="3"/>',
+    '  <polygon points="464,120 452,114 452,126" fill="#334155"/>',
+    '  <text x="330" y="205" text-anchor="middle" font-family="Microsoft YaHei, Segoe UI, sans-serif" font-size="12" fill="#64748b">一个 SVG = 一页幻灯片 · 全部在本地浏览器完成</text>',
+    '</svg>'
+  ].join('\n');
+
+  function boot() {
+    var draft = loadDraft();
+    if (draft) {
+      doc.files = draft.files;
+      doc.selected = clamp(draft.selected || 0, 0, doc.files.length - 1);
+      code.value = currentFile().text || '';
+    } else {
+      doc.files = [{ name: '示例-流程.svg', text: SAMPLE }];
+      doc.selected = 0;
+      code.value = SAMPLE;
+      saveDraft();
+    }
+    renderFiles();
+    render(true);
+  }
+
+  /* ===================== QA 模式（无头浏览器自动化用） ===================== */
+  function runQa(payload) {
+    var out = $('qa-out');
+    var report = { ok: false };
+    try {
+      var text = String(payload || '').trim();
+      if (text.charAt(0) !== '{') {
+        var b64 = text.replace(/-/g, '+').replace(/_/g, '/');
+        while (b64.length % 4) b64 += '=';
+        text = decodeURIComponent(escape(atob(b64)));
+      }
+      var json = JSON.parse(text);
+      var items = (json.files && json.files.length) ? json.files : [{ name: 'sample.svg', text: SAMPLE }];
+      var res = convertAll(items, { safe: json.safe !== false, tolerance: json.tolerance || 0.25 });
+      var bin = '';
+      var bytes = res.bytes;
+      for (var i = 0; i < bytes.length; i += 8192) {
+        bin += String.fromCharCode.apply(null, bytes.subarray(i, i + 8192));
+      }
+      report.ok = true;
+      report.bytes = btoa(bin);
+      report.stats = res.stats;
+      report.slides = res.slides.map(function (s) {
+        return { name: s.name, canvas: s.origCanvas || s.canvas, count: s.shapes.length };
+      });
+      report.warnings = res.warnings;
+    } catch (e) {
+      report.error = String(e && e.message || e);
+    }
+    out.textContent = JSON.stringify(report);
+    out.hidden = false;
+    document.title = 'QA-DONE';
+  }
+
+  var qa = null;
+  try { qa = new URLSearchParams(location.search).get('qa'); } catch (e) { qa = null; }
+  var qaFile = null;
+  try { qaFile = new URLSearchParams(location.search).get('qaFile'); } catch (e) { qaFile = null; }
+  boot();
+  if (qa) runQa(qa);
+  else if (qaFile) {
+    fetch(qaFile).then(function (r) { return r.text(); }).then(runQa, function (e) {
+      var out = $('qa-out');
+      out.textContent = JSON.stringify({ ok: false, error: 'payload load failed: ' + e });
+      out.hidden = false;
+      document.title = 'QA-DONE';
+    });
+  }
+
+  /* 供页面脚本 / 控制台调用 */
+  window.S2P = {
+    convert: function (items, o) { return convertAll(items, o || opts()); },
+    parse: parseSvg,
+    measure: canvasSize,
+    parts: function () { return TEMPLATE_PARTS.map(function (p) { return p.name; }); }
+  };
+})();
+</script>
+</body>
+</html>
