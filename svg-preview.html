@@ -1,0 +1,861 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="color-scheme" content="dark">
+<title>SVG 在线预览 / 导出工具</title>
+<style>
+  :root{
+    --bg:#14161a; --panel:#1b1e24; --panel2:#22262e; --panel3:#2b3038;
+    --line:#2e333c; --fg:#e8eaf0; --muted:#98a2b3;
+    --accent:#4c8dff; --ok:#3ecf8e; --err:#ff6b6b; --warn:#ffc857;
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    display:flex;flex-direction:column;overflow:hidden;
+    background:var(--bg);color:var(--fg);
+    font:14px/1.5 "Segoe UI","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,select{font:inherit;color:inherit}
+  h1{margin:0;font-size:15px;font-weight:600;white-space:nowrap}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;flex-wrap:wrap;gap:12px;align-items:center;justify-content:space-between;
+    padding:10px 14px;background:var(--panel);border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .logo{
+    flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:10px;
+    background:linear-gradient(135deg,#4c8dff,#3ecf8e);color:#0b1520;
+    font-weight:800;font-size:12px;letter-spacing:.5px;
+  }
+  .sub{margin:1px 0 0;font-size:12px;color:var(--muted)}
+  .tools{display:flex;flex-wrap:wrap;gap:6px;align-items:center}
+  .btn{
+    padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+    cursor:pointer;transition:background .15s,border-color .15s;white-space:nowrap;
+  }
+  .btn:hover{background:var(--panel3);border-color:#3b424d}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:600}
+  .btn.primary:hover{background:#6ba0ff;border-color:#6ba0ff}
+  .sep{width:1px;height:20px;background:var(--line)}
+  .minisel{display:flex;align-items:center;gap:4px;font-size:12px;color:var(--muted)}
+  .minisel select{
+    padding:5px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;
+  }
+
+  /* ---------- layout ---------- */
+  main{
+    flex:1;min-height:0;display:grid;
+    grid-template-columns:minmax(240px,1fr) 6px minmax(240px,1fr);
+  }
+  #splitter{
+    background:var(--line);cursor:col-resize;touch-action:none;position:relative;
+    transition:background .15s;
+  }
+  #splitter::after{content:"";position:absolute;inset:0 -4px}
+  #splitter:hover,#splitter.active{background:var(--accent)}
+  .pane{display:flex;flex-direction:column;min-width:0;min-height:0}
+  .editor-pane{background:var(--panel)}
+  .preview-pane{background:var(--bg)}
+  .pane-head{
+    display:flex;flex-wrap:wrap;gap:8px;align-items:center;
+    padding:7px 10px;border-bottom:1px solid var(--line);background:var(--panel);
+  }
+  .pane-title{font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
+  .group{display:flex;align-items:center;gap:4px}
+  .lbl{font-size:12px;color:var(--muted)}
+  .mini{
+    min-width:28px;padding:3px 8px;font-size:12px;border:1px solid var(--line);border-radius:7px;
+    background:var(--panel2);cursor:pointer;line-height:1.4;
+  }
+  .mini:hover{background:var(--panel3)}
+  .mini.active{background:var(--accent);border-color:var(--accent);color:#06121f;font-weight:600}
+  .zoom-label{font-size:12px;color:var(--muted);min-width:74px}
+  .chk{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted);cursor:pointer;user-select:none}
+  .chk input{accent-color:var(--accent);cursor:pointer;margin:0}
+  .push{margin-left:auto}
+
+  /* ---------- editor ---------- */
+  #code{
+    flex:1;min-height:0;width:100%;resize:none;border:0;outline:0;
+    padding:12px;background:var(--panel2);color:#dbe6f5;
+    font:13px/1.55 "Cascadia Mono",Consolas,"Courier New",monospace;
+    tab-size:2;white-space:pre;overflow:auto;
+  }
+  #code::placeholder{color:#5d6675}
+  #code:focus{background:#1f2330}
+
+  /* ---------- preview ---------- */
+  .stage{position:relative;flex:1;min-height:0;overflow:hidden}
+  .stage[data-bg="checker"]{
+    background-color:#fff;
+    background-image:
+      linear-gradient(45deg,#dcdde1 25%,transparent 25%),
+      linear-gradient(-45deg,#dcdde1 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#dcdde1 75%),
+      linear-gradient(-45deg,transparent 75%,#dcdde1 75%);
+    background-size:20px 20px;
+    background-position:0 0,0 10px,10px -10px,-10px 0;
+  }
+  .stage[data-bg="white"]{background:#fff}
+  .stage[data-bg="black"]{background:#000}
+  .stage[data-bg="gray"]{background:#808080}
+  .holder{
+    position:absolute;inset:0;display:flex;overflow:auto;padding:18px;
+  }
+  .holder svg{margin:auto;flex:none;max-width:100%;max-height:100%}
+  .swatch{
+    width:20px;height:20px;border-radius:6px;border:1px solid #4a515c;cursor:pointer;padding:0;
+  }
+  .swatch[data-bg="checker"]{
+    background-color:#fff;
+    background-image:
+      linear-gradient(45deg,#c9cbd1 25%,transparent 25%),
+      linear-gradient(-45deg,#c9cbd1 25%,transparent 25%),
+      linear-gradient(45deg,transparent 75%,#c9cbd1 75%),
+      linear-gradient(-45deg,transparent 75%,#c9cbd1 75%);
+    background-size:12px 12px;
+    background-position:0 0,0 6px,6px -6px,-6px 0;
+  }
+  .swatch[data-bg="white"]{background:#fff}
+  .swatch[data-bg="black"]{background:#000}
+  .swatch[data-bg="gray"]{background:#808080}
+  .swatch.active{outline:2px solid var(--accent);outline-offset:1px}
+  .empty,.errorbox{
+    position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);
+    padding:14px 18px;border-radius:12px;text-align:center;pointer-events:none;
+  }
+  .empty{
+    color:#4a5262;background:rgba(255,255,255,.72);font-size:13px;max-width:80%;
+  }
+  .errorbox{
+    top:auto;bottom:14px;left:14px;transform:none;max-width:calc(100% - 28px);
+    background:#2a1b1e;border:1px solid #6b2b33;color:#ffd9dc;font-size:12px;
+    text-align:left;padding:10px 12px;pointer-events:auto;overflow-wrap:anywhere;
+  }
+  .errorbox b{display:block;color:var(--err);margin-bottom:3px;font-size:12px}
+  [hidden]{display:none !important}
+
+  /* ---------- footer ---------- */
+  footer{
+    display:flex;gap:10px;align-items:center;
+    padding:6px 12px;background:var(--panel);border-top:1px solid var(--line);
+    font-size:12px;color:var(--muted);
+  }
+  #status.ok{color:var(--ok)}
+  #status.err{color:var(--err)}
+  #status.warn{color:var(--warn)}
+  .grow{flex:1}
+
+  /* ---------- drag mask ---------- */
+  #dropmask{
+    position:fixed;inset:0;display:none;place-items:center;z-index:50;
+    background:rgba(12,16,24,.72);border:2px dashed var(--accent);color:#dce8ff;
+    font-size:18px;font-weight:600;backdrop-filter:blur(2px);
+  }
+  #dropmask.show{display:grid}
+
+  @media (max-width:860px){
+    main{grid-template-columns:1fr !important;grid-template-rows:minmax(0,1fr) minmax(0,1fr)}
+    #splitter{display:none}
+    .sub{display:none}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">SVG</div>
+    <div>
+      <h1>SVG 在线预览 / 导出</h1>
+      <p class="sub">粘贴 SVG 代码 → 实时预览 → 导出 SVG / PNG。纯本地运行，不上传任何数据。</p>
+    </div>
+  </div>
+  <div class="tools">
+    <button class="btn" id="btnPaste" title="从剪贴板读取 SVG 代码">📋 粘贴</button>
+    <button class="btn" id="btnOpen" title="打开本地 .svg 文件（Ctrl+O）">📂 打开</button>
+    <button class="btn" id="btnSample" title="载入示例">✨ 示例</button>
+    <button class="btn" id="btnClear" title="清空代码与预览">🗑 清空</button>
+    <span class="sep"></span>
+    <button class="btn" id="btnFormat" title="重新缩进排版">格式化</button>
+    <button class="btn" id="btnMinify" title="去掉换行与注释">压缩</button>
+    <button class="btn" id="btnCopy" title="复制左侧代码">复制代码</button>
+    <span class="sep"></span>
+    <label class="minisel" title="PNG 导出的分辨率倍数">PNG
+      <select id="pngScale">
+        <option value="1">1x</option>
+        <option value="2" selected>2x</option>
+        <option value="4">4x</option>
+      </select>
+    </label>
+    <button class="btn primary" id="btnSvg" title="导出 .svg 文件（Ctrl+S）">⬇ 导出 SVG</button>
+    <button class="btn primary" id="btnPng" title="导出 PNG 图片，背景跟随预览">⬇ 导出 PNG</button>
+    <input type="file" id="file" accept=".svg,image/svg+xml,text/xml,application/xml" hidden>
+  </div>
+</header>
+
+<main id="main">
+  <section class="pane editor-pane">
+    <div class="pane-head">
+      <span class="pane-title">SVG 代码</span>
+      <button class="mini push" id="btnRender" title="立即重新渲染（Ctrl+Enter）">立即渲染</button>
+      <label class="chk" title="开启后会移除 &lt;script&gt; 与 on* 事件属性"><input type="checkbox" id="safeMode" checked>安全模式</label>
+      <label class="chk" title="输入时自动刷新预览"><input type="checkbox" id="autoRender" checked>实时预览</label>
+    </div>
+    <textarea id="code" spellcheck="false" autocomplete="off"
+      placeholder="在此粘贴 SVG 代码…（也可拖入 .svg 文件，或 Ctrl+O 打开）"></textarea>
+  </section>
+
+  <div id="splitter" title="拖动调整左右宽度，双击恢复均分"></div>
+
+  <section class="pane preview-pane">
+    <div class="pane-head">
+      <span class="pane-title">预览</span>
+      <div class="group">
+        <button class="mini" id="zoomOut" title="缩小（Ctrl+-）">−</button>
+        <button class="mini active" id="zoomFit" title="自适应（Ctrl+0）">自适应</button>
+        <button class="mini" id="zoom100" title="原始尺寸">1:1</button>
+        <button class="mini" id="zoomIn" title="放大（Ctrl++）">+</button>
+        <span class="zoom-label" id="zoomLabel">自适应</span>
+      </div>
+      <div class="group push">
+        <span class="lbl">背景</span>
+        <button class="swatch active" data-bg="checker" title="透明格"></button>
+        <button class="swatch" data-bg="white" title="白色"></button>
+        <button class="swatch" data-bg="black" title="黑色"></button>
+        <button class="swatch" data-bg="gray" title="灰色"></button>
+      </div>
+    </div>
+    <div class="stage" id="stage" data-bg="checker">
+      <div class="holder" id="holder"></div>
+      <div class="empty" id="empty">在左侧粘贴 SVG 代码，或把 .svg 文件拖到这里</div>
+      <div class="errorbox" id="errorbox" hidden><b>无法渲染</b><span id="errorText"></span></div>
+    </div>
+  </section>
+</main>
+
+<footer>
+  <span id="status">就绪</span>
+  <span class="grow"></span>
+  <span id="info"></span>
+</footer>
+
+<div id="dropmask">松开鼠标以载入 SVG 文件</div>
+
+<script>
+(function () {
+  'use strict';
+
+  var $ = function (id) { return document.getElementById(id); };
+  var code = $('code'), stage = $('stage'), holder = $('holder'), empty = $('empty'),
+      errorbox = $('errorbox'), errorText = $('errorText'), statusEl = $('status'),
+      infoEl = $('info'), zoomLabel = $('zoomLabel'), splitter = $('splitter'),
+      main = $('main'), safeMode = $('safeMode'), autoRender = $('autoRender'),
+      fileInput = $('file'), dropmask = $('dropmask');
+
+  var LS_KEY = 'svg-tool:draft:v1';
+  var SVG_NS = 'http://www.w3.org/2000/svg';
+  var XLINK_NS = 'http://www.w3.org/1999/xlink';
+
+  var SAMPLE = [
+    '<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 240 160" width="240" height="160">',
+    '  <defs>',
+    '    <linearGradient id="grad" x1="0" y1="0" x2="1" y2="1">',
+    '      <stop offset="0" stop-color="#4c8dff"/>',
+    '      <stop offset="1" stop-color="#3ecf8e"/>',
+    '    </linearGradient>',
+    '  </defs>',
+    '  <rect x="8" y="8" width="224" height="144" rx="18" fill="url(#grad)"/>',
+    '  <circle cx="72" cy="68" r="26" fill="#ffffff" fill-opacity="0.85"/>',
+    '  <path d="M148 110 L188 42 L212 100 Z" fill="#ffffff" fill-opacity="0.55"/>',
+    '  <text x="120" y="138" text-anchor="middle" font-family="Segoe UI, sans-serif"',
+    '        font-size="16" fill="#ffffff">Hello SVG</text>',
+    '</svg>'
+  ].join('\n');
+
+  var currentSvg = null;                 // 解析并通过安全过滤后的源 <svg> 元素
+  var intrinsic = { w: 300, h: 150 };    // 固有尺寸
+  var zoom = null;                       // null = 自适应，数字 = 倍数
+  var renderTimer = null, saveTimer = null;
+
+  /* ================= 提示 ================= */
+  function setStatus(msg, kind) {
+    statusEl.textContent = msg;
+    statusEl.className = kind || '';
+  }
+
+  /* ================= 解析 / 净化 ================= */
+  function normalize(src) {
+    var s = String(src || '').trim();
+    if (!s) return '';
+    // 去掉 XML 声明与 DOCTYPE，保留 svg 本体
+    s = s.replace(/<\?xml[\s\S]*?\?>/i, '').replace(/<!DOCTYPE[\s\S]*?>/i, '');
+    return s.trim();
+  }
+
+  function ensureNamespace(s) {
+    return s.replace(/<svg\b([^>]*)>/i, function (m, attrs) {
+      var a = attrs || '';
+      if (!/\bxmlns\s*=/i.test(a)) a = ' xmlns="' + SVG_NS + '"' + a;
+      if (!/\bxmlns:xlink\s*=/i.test(a) && /xlink:/i.test(s)) a = ' xmlns:xlink="' + XLINK_NS + '"' + a;
+      return '<svg' + a + '>';
+    });
+  }
+
+  function parseErrorText(node) {
+    var t = (node && node.textContent || '').replace(/\s+/g, ' ').trim();
+    if (!t) t = 'XML 语法错误';
+    return t.length > 220 ? t.slice(0, 220) + '…' : t;
+  }
+
+  function parseSvg(src) {
+    var text = ensureNamespace(normalize(src));
+    if (!text) throw new Error('内容为空');
+    var doc = new DOMParser().parseFromString(text, 'image/svg+xml');
+    var bad = doc.getElementsByTagName('parsererror')[0];
+    if (bad) throw new Error(parseErrorText(bad));
+    var root = doc.documentElement;
+    if (!root || root.nodeName.toLowerCase() !== 'svg') {
+      throw new Error('根节点不是 <svg> 元素');
+    }
+    return root;
+  }
+
+  function sanitize(svg) {
+    var scripts = svg.getElementsByTagName('script');
+    while (scripts.length) scripts[0].parentNode.removeChild(scripts[0]);
+    cleanAttrs(svg);
+    var all = svg.getElementsByTagName('*');
+    for (var i = 0; i < all.length; i++) cleanAttrs(all[i]);
+    return svg;
+  }
+
+  function cleanAttrs(el) {
+    var attrs = el.attributes;
+    for (var i = attrs.length - 1; i >= 0; i--) {
+      var name = attrs[i].name;
+      var value = attrs[i].value || '';
+      if (/^on/i.test(name) || /^\s*javascript:/i.test(value)) el.removeAttribute(name);
+    }
+  }
+
+  function measure(svg) {
+    var vb = (svg.getAttribute('viewBox') || '').trim().split(/[\s,]+/).map(Number);
+    if (vb.length === 4 && vb.every(function (n) { return isFinite(n); })) {
+      return { w: Math.abs(vb[2]) || 300, h: Math.abs(vb[3]) || 150 };
+    }
+    return { w: lengthOf(svg.getAttribute('width'), 300), h: lengthOf(svg.getAttribute('height'), 150) };
+  }
+
+  function lengthOf(v, fallback) {
+    if (!v) return fallback;
+    v = String(v).trim();
+    if (v.indexOf('%') >= 0) return fallback;
+    var n = parseFloat(v);
+    return isFinite(n) && n > 0 ? n : fallback;
+  }
+
+  function countElements(svg) {
+    return svg.getElementsByTagName('*').length + 1;
+  }
+
+  /* ================= 渲染 ================= */
+  function showError(msg) {
+    currentSvg = null;
+    holder.innerHTML = '';
+    empty.hidden = true;
+    errorText.textContent = msg;
+    errorbox.hidden = false;
+    infoEl.textContent = '';
+    setStatus('解析失败：' + msg, 'err');
+  }
+
+  function render() {
+    var src = code.value;
+    if (!src.trim()) {
+      currentSvg = null;
+      holder.innerHTML = '';
+      errorbox.hidden = true;
+      empty.hidden = false;
+      infoEl.textContent = '';
+      setStatus('就绪');
+      return;
+    }
+    var svg;
+    try {
+      svg = parseSvg(src);
+    } catch (e) {
+      showError(e.message);
+      return;
+    }
+    if (safeMode.checked) sanitize(svg);
+
+    currentSvg = svg;
+    intrinsic = measure(svg);
+    errorbox.hidden = true;
+    empty.hidden = true;
+    holder.innerHTML = '';
+    holder.appendChild(document.importNode(svg, true));
+    applyZoom();
+    updateInfo();
+    setStatus('渲染成功', 'ok');
+  }
+
+  function updateInfo() {
+    if (!currentSvg) { infoEl.textContent = ''; return; }
+    infoEl.textContent =
+      '尺寸 ' + round(intrinsic.w) + ' × ' + round(intrinsic.h) +
+      '  ·  元素 ' + countElements(currentSvg) +
+      '  ·  源码 ' + code.value.length + ' 字符';
+  }
+
+  function round(n) { return Math.round(n * 100) / 100; }
+
+  /* ================= 缩放 ================= */
+  function applyZoom() {
+    var svg = holder.querySelector('svg');
+    if (!svg) return;
+    svg.removeAttribute('width');
+    svg.removeAttribute('height');
+    if (zoom === null) {
+      svg.style.width = '100%';
+      svg.style.height = '100%';
+    } else {
+      svg.style.width = (intrinsic.w * zoom) + 'px';
+      svg.style.height = (intrinsic.h * zoom) + 'px';
+    }
+    updateZoomLabel();
+  }
+
+  function updateZoomLabel() {
+    if (zoom === null) {
+      var cw = holder.clientWidth - 36, ch = holder.clientHeight - 36;
+      var s = (cw > 0 && ch > 0) ? Math.min(cw / intrinsic.w, ch / intrinsic.h) : 1;
+      zoomLabel.textContent = '自适应 ' + Math.round(s * 100) + '%';
+    } else {
+      zoomLabel.textContent = Math.round(zoom * 100) + '%';
+    }
+  }
+
+  function setZoom(v) {
+    if (v === null) {
+      zoom = null;
+    } else {
+      zoom = Math.min(16, Math.max(0.05, v));
+    }
+    $('zoomFit').classList.toggle('active', zoom === null);
+    applyZoom();
+  }
+
+  function zoomBy(factor) {
+    var base = zoom;
+    if (base === null) {
+      var cw = holder.clientWidth - 36, ch = holder.clientHeight - 36;
+      base = (cw > 0 && ch > 0) ? Math.min(cw / intrinsic.w, ch / intrinsic.h) : 1;
+    }
+    setZoom(base * factor);
+  }
+
+  /* ================= 序列化 / 导出 ================= */
+  function serialize(svg, size) {
+    var clone = svg.cloneNode(true);
+    clone.setAttribute('xmlns', SVG_NS);
+    var needXlink = false;
+    var all = clone.getElementsByTagName('*');
+    for (var i = 0; i < all.length && !needXlink; i++) {
+      var attrs = all[i].attributes;
+      for (var j = 0; j < attrs.length; j++) {
+        if (String(attrs[j].name).toLowerCase().indexOf('xlink:') === 0) { needXlink = true; break; }
+      }
+    }
+    var ownAttrs = clone.attributes;
+    for (var k = 0; k < ownAttrs.length && !needXlink; k++) {
+      if (String(ownAttrs[k].name).toLowerCase().indexOf('xlink:') === 0) needXlink = true;
+    }
+    if (needXlink && !clone.getAttribute('xmlns:xlink')) clone.setAttribute('xmlns:xlink', XLINK_NS);
+    if (size) {
+      clone.setAttribute('width', String(size.w));
+      clone.setAttribute('height', String(size.h));
+    }
+    return new XMLSerializer().serializeToString(clone);
+  }
+
+  function stamp() {
+    var d = new Date(), p = function (n) { return String(n).padStart(2, '0'); };
+    return '' + d.getFullYear() + p(d.getMonth() + 1) + p(d.getDate()) + '-' +
+           p(d.getHours()) + p(d.getMinutes()) + p(d.getSeconds());
+  }
+
+  function download(blob, name) {
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = name;
+    document.body.appendChild(a);
+    a.click();
+    a.remove();
+    setTimeout(function () { URL.revokeObjectURL(url); }, 5000);
+    setStatus('已导出 ' + name, 'ok');
+  }
+
+  function needSvg() {
+    if (!currentSvg) {
+      setStatus('请先粘贴一段可正常渲染的 SVG 代码', 'warn');
+      return true;
+    }
+    return false;
+  }
+
+  function exportSvg() {
+    if (needSvg()) return;
+    var text = '<?xml version="1.0" encoding="UTF-8"?>\n' + serialize(currentSvg);
+    download(new Blob([text], { type: 'image/svg+xml;charset=utf-8' }), 'svg-' + stamp() + '.svg');
+  }
+
+  function pngBackground() {
+    var mode = stage.getAttribute('data-bg');
+    if (mode === 'white') return '#ffffff';
+    if (mode === 'black') return '#000000';
+    if (mode === 'gray') return '#808080';
+    return null; // 透明格 → 透明背景
+  }
+
+  function exportPng() {
+    if (needSvg()) return;
+    var scale = parseFloat($('pngScale').value) || 1;
+    var w = Math.max(1, Math.round(intrinsic.w * scale));
+    var h = Math.max(1, Math.round(intrinsic.h * scale));
+    var limit = 8192;
+    if (w > limit || h > limit) {
+      setStatus('尺寸 ' + w + '×' + h + ' 过大，请降低 PNG 倍数', 'err');
+      return;
+    }
+    var text = serialize(currentSvg, { w: w, h: h });
+    var url = 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(text);
+    var img = new Image();
+    img.onload = function () {
+      var canvas = document.createElement('canvas');
+      canvas.width = w;
+      canvas.height = h;
+      var ctx = canvas.getContext('2d');
+      var bg = pngBackground();
+      if (bg) { ctx.fillStyle = bg; ctx.fillRect(0, 0, w, h); }
+      ctx.drawImage(img, 0, 0, w, h);
+      canvas.toBlob(function (blob) {
+        if (!blob) { setStatus('PNG 导出失败', 'err'); return; }
+        download(blob, 'svg-' + stamp() + '.png');
+      }, 'image/png');
+    };
+    img.onerror = function () {
+      setStatus('PNG 导出失败：SVG 可能引用了外部图片或字体', 'err');
+    };
+    img.src = url;
+  }
+
+  /* ================= 格式化 / 压缩 ================= */
+  function escText(s) {
+    return String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+  }
+  function escAttr(s) {
+    return escText(s).replace(/"/g, '&quot;');
+  }
+
+  // 这些元素内的空白会影响渲染结果，格式化时必须原样保留
+  var INLINE_TAGS = { text: 1, tspan: 1, textpath: 1, tref: 1, style: 1, title: 1, desc: 1 };
+
+  function prettyNode(node, depth) {
+    var pad = new Array(depth + 1).join('  ');
+    if (node.nodeType === 3) {
+      var t = node.nodeValue.trim();
+      return t ? pad + escText(t) : null;
+    }
+    if (node.nodeType === 8) return pad + '<!--' + node.nodeValue + '-->';
+    if (node.nodeType === 4) return pad + '<![CDATA[' + node.nodeValue + ']]>';
+    if (node.nodeType !== 1) return null;
+
+    var attrs = '';
+    for (var i = 0; i < node.attributes.length; i++) {
+      attrs += ' ' + node.attributes[i].name + '="' + escAttr(node.attributes[i].value) + '"';
+    }
+    var name = node.nodeName;
+
+    if (INLINE_TAGS[name.toLowerCase()]) {
+      var inner = '';
+      for (var m = 0; m < node.childNodes.length; m++) {
+        inner += new XMLSerializer().serializeToString(node.childNodes[m]);
+      }
+      // 子节点会被序列化器补上重复的 svg 命名空间声明，这里去掉
+      inner = inner.replace(/ xmlns="http:\/\/www\.w3\.org\/2000\/svg"/g, '');
+      return pad + '<' + name + attrs + '>' + inner + '</' + name + '>';
+    }
+
+    var hasElementChild = false;
+    var kids = [];
+    for (var j = 0; j < node.childNodes.length; j++) {
+      if (node.childNodes[j].nodeType === 1) hasElementChild = true;
+      var s = prettyNode(node.childNodes[j], depth + 1);
+      if (s) kids.push(s);
+    }
+    if (!kids.length) return pad + '<' + name + attrs + '/>';
+    if (!hasElementChild) {
+      return pad + '<' + name + attrs + '>' + escText(node.textContent.trim()) + '</' + name + '>';
+    }
+    return pad + '<' + name + attrs + '>\n' + kids.join('\n') + '\n' + pad + '</' + name + '>';
+  }
+
+  function doFormat() {
+    var svg;
+    try { svg = parseSvg(code.value); } catch (e) { showError(e.message); return; }
+    code.value = prettyNode(svg, 0);
+    render();
+    saveDraft();
+    setStatus('已格式化', 'ok');
+  }
+
+  function doMinify() {
+    var svg;
+    try { svg = parseSvg(code.value); } catch (e) { showError(e.message); return; }
+    var clone = svg.cloneNode(true);
+    var walk = function (node) {
+      for (var i = node.childNodes.length - 1; i >= 0; i--) {
+        var child = node.childNodes[i];
+        if (child.nodeType === 8) { node.removeChild(child); continue; }
+        if (child.nodeType === 1) { walk(child); continue; }
+        if (child.nodeType === 3) {
+          var hasElementSibling = false;
+          for (var j = 0; j < node.childNodes.length; j++) {
+            if (node.childNodes[j].nodeType === 1) { hasElementSibling = true; break; }
+          }
+          if (hasElementSibling) {
+            if (child.nodeValue.trim()) child.nodeValue = child.nodeValue.trim().replace(/\s+/g, ' ');
+            else node.removeChild(child);
+          } else {
+            child.nodeValue = child.nodeValue.replace(/\s+/g, ' ');
+          }
+        }
+      }
+    };
+    walk(clone);
+    code.value = new XMLSerializer().serializeToString(clone).replace(/>\s+</g, '><').trim();
+    render();
+    saveDraft();
+    setStatus('已压缩', 'ok');
+  }
+
+  /* ================= 草稿 ================= */
+  function saveDraft() {
+    if (saveTimer) clearTimeout(saveTimer);
+    saveTimer = setTimeout(function () {
+      try { localStorage.setItem(LS_KEY, code.value); } catch (e) { /* 无痕模式忽略 */ }
+    }, 400);
+  }
+
+  function loadDraft() {
+    try { return localStorage.getItem(LS_KEY); } catch (e) { return null; }
+  }
+
+  /* ================= 事件绑定 ================= */
+  code.addEventListener('input', function () {
+    saveDraft();
+    if (renderTimer) clearTimeout(renderTimer);
+    if (autoRender.checked) {
+      renderTimer = setTimeout(render, 250);
+    } else {
+      setStatus('内容已修改，按 Ctrl+Enter 渲染', 'warn');
+    }
+  });
+
+  code.addEventListener('keydown', function (e) {
+    if (e.key === 'Tab') {
+      e.preventDefault();
+      var s = this.selectionStart, en = this.selectionEnd;
+      this.value = this.value.slice(0, s) + '  ' + this.value.slice(en);
+      this.selectionStart = this.selectionEnd = s + 2;
+      saveDraft();
+    }
+  });
+
+  $('btnRender').addEventListener('click', render);
+  $('btnFormat').addEventListener('click', doFormat);
+  $('btnMinify').addEventListener('click', doMinify);
+  $('btnSvg').addEventListener('click', exportSvg);
+  $('btnPng').addEventListener('click', exportPng);
+  $('btnSample').addEventListener('click', function () {
+    code.value = SAMPLE;
+    render();
+    saveDraft();
+  });
+  $('btnClear').addEventListener('click', function () {
+    code.value = '';
+    render();
+    saveDraft();
+    code.focus();
+  });
+  $('btnCopy').addEventListener('click', function () {
+    if (!code.value) { setStatus('没有可复制的内容', 'warn'); return; }
+    if (!navigator.clipboard) { setStatus('当前环境不支持剪贴板 API', 'err'); return; }
+    navigator.clipboard.writeText(code.value).then(function () {
+      setStatus('代码已复制到剪贴板', 'ok');
+    }, function () {
+      setStatus('复制失败', 'err');
+    });
+  });
+  $('btnPaste').addEventListener('click', function () {
+    if (!navigator.clipboard || !navigator.clipboard.readText) {
+      setStatus('当前环境不支持读取剪贴板，请直接 Ctrl+V 粘贴', 'err');
+      return;
+    }
+    navigator.clipboard.readText().then(function (text) {
+      if (!text || !text.trim()) { setStatus('剪贴板为空', 'warn'); return; }
+      code.value = text;
+      render();
+      saveDraft();
+    }, function () {
+      setStatus('读取剪贴板被拒绝，请直接 Ctrl+V 粘贴', 'err');
+    });
+  });
+  $('btnOpen').addEventListener('click', function () { fileInput.click(); });
+
+  fileInput.addEventListener('change', function () {
+    if (fileInput.files && fileInput.files[0]) loadFile(fileInput.files[0]);
+    fileInput.value = '';
+  });
+
+  function loadFile(file) {
+    var reader = new FileReader();
+    reader.onload = function () {
+      code.value = String(reader.result || '');
+      render();
+      saveDraft();
+      setStatus('已载入 ' + file.name, 'ok');
+    };
+    reader.onerror = function () { setStatus('文件读取失败', 'err'); };
+    reader.readAsText(file);
+  }
+
+  var swatches = document.querySelectorAll('.swatch');
+  for (var i = 0; i < swatches.length; i++) {
+    swatches[i].addEventListener('click', function () {
+      stage.setAttribute('data-bg', this.getAttribute('data-bg'));
+      for (var k = 0; k < swatches.length; k++) swatches[k].classList.remove('active');
+      this.classList.add('active');
+    });
+  }
+
+  $('zoomFit').addEventListener('click', function () { setZoom(null); });
+  $('zoom100').addEventListener('click', function () { setZoom(1); });
+  $('zoomIn').addEventListener('click', function () { zoomBy(1.25); });
+  $('zoomOut').addEventListener('click', function () { zoomBy(0.8); });
+
+  stage.addEventListener('wheel', function (e) {
+    if (!currentSvg) return;
+    if (!e.ctrlKey && !e.metaKey) return;
+    e.preventDefault();
+    zoomBy(e.deltaY < 0 ? 1.12 : 0.89);
+  }, { passive: false });
+
+  safeMode.addEventListener('change', render);
+  autoRender.addEventListener('change', function () {
+    if (autoRender.checked) render();
+  });
+
+  window.addEventListener('resize', function () {
+    if (zoom === null) updateZoomLabel();
+  });
+
+  /* ---- 左右分栏拖动 ---- */
+  var dragging = false;
+  splitter.addEventListener('pointerdown', function (e) {
+    dragging = true;
+    splitter.classList.add('active');
+    document.body.style.userSelect = 'none';
+    if (splitter.setPointerCapture) splitter.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  splitter.addEventListener('pointermove', function (e) {
+    if (!dragging) return;
+    var rect = main.getBoundingClientRect();
+    var pct = ((e.clientX - rect.left) / rect.width) * 100;
+    pct = Math.min(85, Math.max(15, pct));
+    main.style.gridTemplateColumns =
+      'calc(' + pct + '% - 3px) 6px calc(' + (100 - pct) + '% - 3px)';
+  });
+  function endDrag(e) {
+    if (!dragging) return;
+    dragging = false;
+    splitter.classList.remove('active');
+    document.body.style.userSelect = '';
+    if (e && splitter.releasePointerCapture && e.pointerId !== undefined) {
+      try { splitter.releasePointerCapture(e.pointerId); } catch (err) {}
+    }
+  }
+  splitter.addEventListener('pointerup', endDrag);
+  splitter.addEventListener('pointercancel', endDrag);
+  splitter.addEventListener('dblclick', function () {
+    main.style.gridTemplateColumns = '';
+  });
+
+  /* ---- 拖放文件 ---- */
+  var dragDepth = 0;
+  window.addEventListener('dragenter', function (e) {
+    e.preventDefault();
+    dragDepth++;
+    dropmask.classList.add('show');
+  });
+  window.addEventListener('dragover', function (e) { e.preventDefault(); });
+  window.addEventListener('dragleave', function (e) {
+    e.preventDefault();
+    dragDepth = Math.max(0, dragDepth - 1);
+    if (!dragDepth) dropmask.classList.remove('show');
+  });
+  window.addEventListener('drop', function (e) {
+    e.preventDefault();
+    dragDepth = 0;
+    dropmask.classList.remove('show');
+    var dt = e.dataTransfer;
+    if (!dt) return;
+    var file = dt.files && dt.files[0];
+    if (file) {
+      if (!/\.(svg|xml|txt)$/i.test(file.name) && file.type.indexOf('svg') < 0) {
+        setStatus('请拖入 .svg 文件（也可直接粘贴代码）', 'warn');
+      }
+      loadFile(file);
+      return;
+    }
+    var text = dt.getData('text/plain');
+    if (text && text.trim()) {
+      code.value = text;
+      render();
+      saveDraft();
+    }
+  });
+
+  /* ---- 快捷键 ---- */
+  window.addEventListener('keydown', function (e) {
+    var ctrl = e.ctrlKey || e.metaKey;
+    if (!ctrl) return;
+    var key = e.key.toLowerCase();
+    if (key === 's') { e.preventDefault(); exportSvg(); }
+    else if (key === 'o') { e.preventDefault(); fileInput.click(); }
+    else if (key === 'enter') { e.preventDefault(); render(); }
+    else if (key === '0') { e.preventDefault(); setZoom(null); }
+    else if (key === '=' || key === '+') { e.preventDefault(); zoomBy(1.25); }
+    else if (key === '-') { e.preventDefault(); zoomBy(0.8); }
+  });
+
+  /* ================= 启动 ================= */
+  var saved = loadDraft();
+  code.value = (saved && saved.trim()) ? saved : SAMPLE;
+  render();
+  if (!saved || !saved.trim()) saveDraft();
+})();
+</script>
+</body>
+</html>

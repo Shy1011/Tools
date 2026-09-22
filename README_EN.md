@@ -39,6 +39,24 @@ Features:
 
 ![Preview](xy-plotter-preview.png)
 
+### 3. SVG Preview / Export (`svg-preview.html`)
+
+Paste SVG code in to get a live preview and export it as an SVG or PNG image — handy for checking designs, icons, or preparing assets.
+
+Features:
+
+- Live preview: paste on the left, render on the right; turn live mode off to use "Render now" or `Ctrl+Enter`
+- Tolerant parsing: a missing `xmlns` is filled in automatically; syntax errors are reported with details in the preview area
+- Safe mode (on by default): strips `<script>` and `on*` event attributes
+- Code cleanup: one-click format and minify; whitespace-sensitive elements such as `<text>`, `<tspan>`, and `<style>` are kept inline so text rendering never changes
+- SVG export: fills in the namespace and an XML declaration, then downloads a `.svg` file (`Ctrl+S`)
+- PNG export: 1x / 2x / 4x resolution, with the background following the preview (checkerboard = transparent)
+- Viewing aids: fit / 1:1 / `Ctrl+wheel` zoom, four preview backgrounds (checkerboard / white / black / gray), plus size and element count readouts
+- Loading: drag and drop a `.svg` file, `Ctrl+O` to open, read from the clipboard, or paste directly with `Ctrl+V`
+- Auto-save: the current code is stored in the browser and restored on refresh; everything runs locally and nothing is uploaded
+
+![Preview](svg-preview-preview.png)
+
 ## Usage
 
 1. Clone or download this repository;
@@ -53,6 +71,8 @@ Features:
 | `bit-to-hex-x6-preview.png` | Tool preview screenshot |
 | `xy-plotter.html` | XY plotter · simple edition |
 | `xy-plotter-preview.png` | Tool preview screenshot |
+| `svg-preview.html` | SVG preview / export tool page |
+| `svg-preview-preview.png` | Tool preview screenshot |
 | `README.md` | Chinese documentation |
 | `README_EN.md` | This documentation (English) |
 
