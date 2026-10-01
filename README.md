@@ -75,11 +75,48 @@
 
 ![预览截图](svg-to-pptx-preview.png)
 
+### 5. 图片公式转 Markdown(`image-to-markdown.html`)
+
+把图片里的**普通文字和数学公式分开**,公式转成 LaTeX,直接输出可复制的 Markdown 源码。适合整理教材截图、论文公式、板书照片、Word 里的公式截图。识别用 **Google Gemini 免费档**,不需要付费服务。
+
+功能:
+
+- 三种输入方式:截图后 `Ctrl+V` 直接粘贴、把图片拖进页面、点「选择图片」打开文件;PNG / JPG / WebP / BMP 都支持
+- 输出**原位混合 Markdown**:正文按原图分段、标题用 `#`、列表和表格用 Markdown,行内公式写成 `$...$`、独立公式写成 `$$...$$`,公式落在它在原图中的位置,不会被集中搬到末尾
+- 原文语言原样保留(中文仍是中文、英文仍是英文),不会翻译或改写;无法辨认的字符写成 `⟨?⟩` 而不是猜
+- 上传前自动预处理:等比缩放到长边 2000px 并转 JPEG,避免超出接口体积限制、加快识别
+- 在线编辑与导出:右侧源码框可直接改,一键复制或下载 `.md`
+- 附加要求输入框:例如「忽略页眉页码」「公式保留编号」「按原图分行」
+- 模型下拉会在填入 Key 后**自动拉取**你账号可用的 Gemini 模型(默认选 flash 系,更快更省额度),Google 改模型名也不用改代码
+- **容错自动切换**:选中模型返回 503(过载)/429(限流)/404(旧模型下线)时,会自动改用列表里下一个可用模型重试,不会直接报错让你重来
+- 「测试」按钮只请求模型列表验证 Key,不消耗生成额度
+- 自动记住 API Key、模型选择与附加要求;`Ctrl+Enter` 识别、`Ctrl+S` 下载 `.md`
+
+> **不想每次输 Key?** 在 HTML 同目录放一个私有文件 `image-to-markdown.keys.local.js`(已被 `.gitignore` 忽略,不会提交):
+>
+> ```js
+> window.I2M_KEYS = { '19991021': '你的真实 API Key' };
+> ```
+>
+> 之后页面会自动读这张表:输入框里只显示 `19991021`,提交时再换算成真实 Key。仓库里没有这个文件也完全不影响使用,只是短代号不生效——所以**真实 Key 永远不会出现在 GitHub 上**。
+
+使用前需要:
+
+- 一个 [Google AI Studio](https://aistudio.google.com/apikey) 的**免费** API Key(页面右上角填入)。Key 只保存在**本机浏览器 localStorage**,不会写进 HTML 文件,也不会提交到仓库
+- 能访问 Google 的网络(大陆一般需要代理)。**与其他工具不同,本工具会把图片上传给 Google 做识别**;其余工具仍然全部在本地运行
+- 免费档有每分钟 / 每天次数上限,用完会提示 `429`,换模型或稍后重试即可
+
+> 免费档的两个坑(实测):**Pro 类模型免费档不可用**(配额为 0,选了会直接 429),**2.5 系已对新用户下线**(会返回 404)。工具里已经把这两类模型排到列表后面,并且遇错会自动换模型;要查你账号的真实额度,登录后看 [ai.dev/rate-limit](https://ai.dev/rate-limit)。
+
+![预览截图](image-to-markdown-preview.png)
+
 ## 使用方法
 
 1. 克隆或下载本仓库;
 2. 用 Chrome / Edge / Firefox 等浏览器直接打开 HTML 文件;
 3. 不需要服务器,也不需要安装任何依赖。
+
+> 唯一例外是「图片公式转 Markdown」:它需要在页面里填一个自己的 Google Gemini 免费 Key 并联网(图片会上传给 Google),其余工具完全离线。
 
 ## 目录结构
 
@@ -93,6 +130,8 @@
 | `svg-preview-preview.png` | 工具预览截图 |
 | `svg-to-pptx.html` | SVG 转可编辑 PPT 工具页 |
 | `svg-to-pptx-preview.png` | 工具预览截图 |
+| `image-to-markdown.html` | 图片公式转 Markdown 工具页 |
+| `image-to-markdown-preview.png` | 工具预览截图 |
 | `README.md` | 本说明文件 |
 | `README_EN.md` | English documentation |
 
@@ -102,6 +141,7 @@
 - 位选择器按 32 位无符号整数计算;bit 31 置位时,`int32` 一栏显示补码形式的负数;注释保存在浏览器 `localStorage`
 - 曲线工具中,标题 / 轴标签位置与曲线数据均保存在当前浏览器本地;Log 坐标会自动跳过 0 和负数
 - SVG 转 PPT 工具用浏览器 DOM 解析 SVG(自动解析 CSS / class / `style` 与 `transform`),再按 DrawingML 规范现场生成 PPTX 与 ZIP 包,因此不需要任何第三方库;页面还对外暴露 `window.S2P.convert(...)` 与 `?qa=` / `?qaFile=` 两个自动化测试入口,方便脚本回归验证转换结果
+- 图片转 Markdown 工具用浏览器 `fetch` 直连 Google Gemini 的 `generativelanguage.googleapis.com/v1beta` 接口(该接口返回允许跨域的响应头,所以纯静态页面从 `file://` 打开也能直接调用),鉴权走 `x-goog-api-key` 请求头,图片以 base64 `inline_data` 传入,由 `systemInstruction` 约束输出格式;页面暴露 `window.I2M.convert(dataUrl, {key, model, extra})` 与 `I2M.listModels(key)`,并支持 `?demo=1`(加载内置示例图,不调用接口)与 `?demo=1&auto=1`(示例图直接跑一次识别)两个自动化入口
 
 ## License
 

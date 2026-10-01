@@ -75,11 +75,48 @@ Features:
 
 ![Preview](svg-to-pptx-preview.png)
 
+### 5. Image Formulas → Markdown (`image-to-markdown.html`)
+
+Paste a picture of text mixed with math, and get back **Markdown source with the plain text and the formulas separated** — every formula converted to LaTeX. Handy for textbook screenshots, paper equations, whiteboard photos, and formula screenshots from Word. Recognition runs on the **Google Gemini free tier**, so no paid service is involved.
+
+Features:
+
+- Three ways in: paste a screenshot with `Ctrl+V`, drag an image onto the page, or use the Open button; PNG / JPG / WebP / BMP supported
+- In-place Markdown output: paragraphs, `#` headings, Markdown lists and tables follow the original layout; inline math becomes `$...$`, display math becomes `$$...$$`, and every formula stays where it was in the picture instead of being swept to the end
+- Nothing is translated or rewritten — the original language is preserved — and unreadable glyphs are marked `⟨?⟩` instead of guessed
+- Pre-processing before upload: images are scaled to a 2000 px long edge and converted to JPEG, keeping them inside the API size limit and speeding up recognition
+- Edit, copy, or download the resulting `.md` straight from the page
+- Optional "extra instructions" box, e.g. "ignore headers and page numbers", "keep equation numbers", "break lines as in the original"
+- The model dropdown **loads the models your key can use** as soon as a key is entered (flash-class models are picked by default: faster and lighter on your quota), so a Google model rename never needs a code change
+- **Self-healing fallback**: if the selected model returns 503 (overloaded) / 429 (rate limited) / 404 (retired for new users), the page automatically retries with the next usable model instead of failing outright
+- The "Test" button only fetches the model list to validate the key — it spends no generation quota
+- API key, model choice, and extra instructions are remembered locally; `Ctrl+Enter` runs recognition, `Ctrl+S` downloads the `.md`
+
+> **Don't want to type the key each time?** Drop a private file named `image-to-markdown.keys.local.js` next to the HTML (it is `.gitignore`d and never committed):
+>
+> ```js
+> window.I2M_KEYS = { '19991021': 'your real API key' };
+> ```
+>
+> The page then shows only `19991021` in the input and swaps in the real key when calling the API. The repository works fine without that file — only the short alias stops resolving — so **the real key never lands on GitHub**.
+
+Before you start you need:
+
+- A **free** [Google AI Studio](https://aistudio.google.com/apikey) API key, entered in the top-right of the page. The key is kept only in your browser's `localStorage` — it is never written into the HTML file and never committed to this repository
+- A network connection that can reach Google (usually a proxy is required from mainland China). **Unlike the other tools, this one uploads your image to Google for recognition**; everything else in this repository still runs entirely locally
+- The free tier has per-minute and per-day limits; when you hit them the page reports `429` — switch models or retry later
+
+> Two free-tier traps we hit in testing: **Pro-class models are not available on the free tier** (quota is 0, so they fail with 429), and the **2.5 family has been retired for new users** (404). The page ranks both kinds to the bottom of the list and falls back automatically; to see the real numbers for your account, sign in and open [ai.dev/rate-limit](https://ai.dev/rate-limit).
+
+![Preview](image-to-markdown-preview.png)
+
 ## Usage
 
 1. Clone or download this repository;
 2. Open the HTML files directly in Chrome / Edge / Firefox or another browser;
 3. No server and no dependencies needed.
+
+> The only exception is "Image Formulas → Markdown": it needs your own free Google Gemini key and a network connection (the image is uploaded to Google). Every other tool works fully offline.
 
 ## File Structure
 
@@ -93,6 +130,8 @@ Features:
 | `svg-preview-preview.png` | Tool preview screenshot |
 | `svg-to-pptx.html` | SVG → editable PowerPoint tool page |
 | `svg-to-pptx-preview.png` | Tool preview screenshot |
+| `image-to-markdown.html` | Image formulas → Markdown tool page |
+| `image-to-markdown-preview.png` | Tool preview screenshot |
 | `README.md` | Chinese documentation |
 | `README_EN.md` | This documentation (English) |
 
@@ -102,6 +141,7 @@ Features:
 - The bit selector computes with 32-bit unsigned integers; when bit 31 is set, the `int32` column shows the two's-complement negative value; notes are saved in browser `localStorage`
 - In the plotter, title / axis label positions and curve data are saved locally in the current browser; log axes automatically skip 0 and negative values
 - The SVG → PPT tool parses SVG with the browser DOM (so CSS / class / `style` rules and `transform` are resolved for free) and then writes the PPTX and ZIP packages directly from the DrawingML specification — hence no third-party library. The page also exposes `window.S2P.convert(...)` plus the `?qa=` / `?qaFile=` entry points used by the automated regression checks
+- The image → Markdown tool calls Google Gemini's `generativelanguage.googleapis.com/v1beta` endpoint directly from the browser with `fetch` (it sends permissive CORS headers, so a static page opened from `file://` can call it with no server), authenticating with the `x-goog-api-key` header and passing the image as base64 `inline_data`, with a `systemInstruction` pinning the output format. The page exposes `window.I2M.convert(dataUrl, {key, model, extra})` and `I2M.listModels(key)`, and supports `?demo=1` (loads a built-in sample image, no API call) and `?demo=1&auto=1` (runs one real recognition on the sample) for automated checks
 
 ## License
 

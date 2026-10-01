@@ -1,0 +1,808 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>图片公式转 Markdown · 在线工具</title>
+<style>
+  :root{
+    --bg:#f5f6f8; --panel:#ffffff; --panel2:#f0f2f5; --line:#e2e6ec;
+    --fg:#1b2430; --muted:#697386; --accent:#2563eb; --accent2:#1d4ed8;
+    --ok:#0f9d63; --err:#d92d20; --warn:#b54708;
+  }
+  @media (prefers-color-scheme: dark){
+    :root{
+      --bg:#0f1217; --panel:#171c24; --panel2:#1e242e; --line:#2a323e;
+      --fg:#e6e9ef; --muted:#9aa5b5; --accent:#3b82f6; --accent2:#60a5fa;
+      --ok:#3ecf8e; --err:#ff6b6b; --warn:#ffc857;
+    }
+  }
+  *{box-sizing:border-box}
+  html,body{height:100%;margin:0}
+  body{
+    display:flex;flex-direction:column;overflow:hidden;background:var(--bg);color:var(--fg);
+    font:14px/1.55 system-ui,-apple-system,"Segoe UI","Microsoft YaHei",sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  button,select,input,textarea{font:inherit;color:inherit}
+  h1{margin:0;font-size:15px;font-weight:600;white-space:nowrap}
+
+  /* ---------- header ---------- */
+  header{
+    display:flex;flex-wrap:wrap;gap:10px 14px;align-items:center;justify-content:space-between;
+    padding:9px 14px;background:var(--panel);border-bottom:1px solid var(--line);
+  }
+  .brand{display:flex;align-items:center;gap:10px;min-width:0}
+  .logo{
+    flex:none;display:grid;place-items:center;width:38px;height:38px;border-radius:10px;
+    background:linear-gradient(135deg,#2563eb,#0f9d63);color:#fff;font-weight:800;font-size:13px;letter-spacing:.5px;
+  }
+  .sub{margin:1px 0 0;font-size:12px;color:var(--muted)}
+  .tools{display:flex;flex-wrap:wrap;gap:8px;align-items:center}
+  .minisel{display:flex;align-items:center;gap:5px;font-size:12px;color:var(--muted)}
+  .minisel select{
+    padding:5px 6px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);cursor:pointer;
+  }
+  .keybox{display:flex;align-items:center;gap:6px}
+  #key{
+    width:230px;padding:6px 9px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+    font-family:"Cascadia Mono",Consolas,monospace;font-size:12px;
+  }
+  #key:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  .btn{
+    padding:6px 10px;border:1px solid var(--line);border-radius:8px;background:var(--panel2);
+    cursor:pointer;white-space:nowrap;transition:background .15s,border-color .15s;
+  }
+  .btn:hover{background:var(--panel);border-color:var(--accent)}
+  .btn:active{transform:translateY(1px)}
+  .btn.primary{background:var(--accent);border-color:var(--accent);color:#fff;font-weight:600}
+  .btn.primary:hover{background:var(--accent2);border-color:var(--accent2)}
+  .btn[disabled]{opacity:.55;cursor:not-allowed;transform:none}
+  .mini{padding:4px 9px;font-size:12px;border-radius:7px}
+
+  /* ---------- layout ---------- */
+  main{
+    flex:1;min-height:0;display:grid;
+    grid-template-columns:minmax(280px,44%) 6px minmax(280px,1fr);
+  }
+  #splitter{background:var(--line);cursor:col-resize;touch-action:none;position:relative;transition:background .15s}
+  #splitter::after{content:"";position:absolute;inset:0 -4px}
+  #splitter:hover,#splitter.active{background:var(--accent)}
+  .pane{display:flex;flex-direction:column;min-width:0;min-height:0;background:var(--panel)}
+  .pane-head{
+    display:flex;flex-wrap:wrap;gap:6px;align-items:center;
+    padding:7px 10px;border-bottom:1px solid var(--line);
+  }
+  .pane-title{font-size:12px;font-weight:600;letter-spacing:.4px;color:var(--muted);text-transform:uppercase}
+  .meta{font-size:12px;color:var(--muted)}
+  .push{margin-left:auto}
+
+  /* ---------- left: image ---------- */
+  .drop{
+    position:relative;flex:1;min-height:0;margin:10px;border:1.5px dashed var(--line);border-radius:12px;
+    background:var(--panel2);display:flex;align-items:center;justify-content:center;overflow:auto;cursor:pointer;
+    transition:border-color .15s,background .15s;
+  }
+  .drop:hover{border-color:var(--accent)}
+  .drop.over{border-color:var(--accent);background:color-mix(in srgb,var(--accent) 12%,var(--panel2))}
+  .drop img{max-width:100%;max-height:100%;object-fit:contain;border-radius:8px;display:block;margin:auto}
+  .drop img[hidden]{display:none}
+  .drop-empty{text-align:center;color:var(--muted);padding:18px}
+  .drop-empty .ico{font-size:34px;line-height:1}
+  .drop-empty p{margin:8px 0 0}
+  .drop-empty .big{font-size:15px;color:var(--fg);font-weight:600}
+  .drop-empty .hint{font-size:12px}
+  .busy{
+    position:absolute;inset:0;display:flex;align-items:center;justify-content:center;gap:10px;
+    background:color-mix(in srgb,var(--panel) 78%,transparent);font-size:13px;backdrop-filter:blur(2px);
+  }
+  .busy[hidden]{display:none}
+  .spin{
+    width:18px;height:18px;border:2px solid var(--line);border-top-color:var(--accent);border-radius:50%;
+    animation:spin .8s linear infinite;
+  }
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .pane-foot{padding:0 10px 10px;display:flex;flex-direction:column;gap:8px}
+  #extra{
+    width:100%;resize:vertical;min-height:44px;max-height:140px;padding:8px 10px;border:1px solid var(--line);
+    border-radius:9px;background:var(--panel2);font-size:13px;
+  }
+  #extra:focus{outline:2px solid var(--accent);outline-offset:-1px}
+  .wide{width:100%;padding:9px}
+  .note{margin:0;font-size:11.5px;color:var(--muted);line-height:1.5}
+
+  /* ---------- right: markdown ---------- */
+  #md{
+    flex:1;min-height:0;width:100%;resize:none;border:0;outline:0;padding:12px 14px;
+    background:var(--panel2);color:var(--fg);tab-size:2;
+    font:13px/1.65 "Cascadia Mono",Consolas,"Courier New",monospace;
+  }
+  #md::placeholder{color:var(--muted)}
+  .status{
+    padding:7px 12px;border-top:1px solid var(--line);font-size:12px;color:var(--muted);
+    min-height:32px;display:flex;align-items:center;gap:8px;
+  }
+  .status.ok{color:var(--ok)}
+  .status.err{color:var(--err)}
+  .status.warn{color:var(--warn)}
+
+  @media (max-width:900px){
+    body{overflow:auto}
+    main{grid-template-columns:1fr;min-height:0}
+    #splitter{display:none}
+    .pane{min-height:56vh}
+    #key{width:170px}
+  }
+</style>
+</head>
+<body>
+
+<header>
+  <div class="brand">
+    <div class="logo">Md</div>
+    <div>
+      <h1>图片公式转 Markdown</h1>
+      <p class="sub">粘贴图片 → 文字与公式自动分离 → 输出带 LaTeX 的 Markdown 源码</p>
+    </div>
+  </div>
+  <div class="tools">
+    <label class="minisel">模型
+      <select id="model" title="Gemini 视觉模型（填入 Key 后自动加载列表）">
+        <option value="">填入 Key 后自动加载…</option>
+      </select>
+    </label>
+    <div class="keybox">
+      <input id="key" type="password" autocomplete="off" spellcheck="false" placeholder="粘贴 Google AI Studio API Key">
+      <button class="btn mini" id="testKey" title="只请求模型列表，验证 Key 是否可用（不消耗生成额度）">测试</button>
+      <button class="btn mini" id="clearKey" title="清除本机保存的 Key">清除</button>
+    </div>
+  </div>
+</header>
+
+<main id="main">
+  <section class="pane">
+    <div class="pane-head">
+      <span class="pane-title">原图</span>
+      <span class="meta" id="imgMeta">未选择</span>
+      <span class="push"></span>
+      <button class="btn mini" id="pick">选择图片</button>
+      <button class="btn mini" id="demoBtn">示例图片</button>
+      <button class="btn mini" id="clearImg">清空</button>
+    </div>
+    <div class="drop" id="drop" tabindex="0">
+      <img id="thumb" alt="待识别图片预览" hidden>
+      <div class="drop-empty" id="empty">
+        <div class="ico">🖼️</div>
+        <p class="big">点这里选图片，或直接粘贴 / 拖入</p>
+        <p>截图工具截图后按 Ctrl+V 就能贴进来</p>
+        <p class="hint">PNG / JPG / WebP / BMP · 上传前自动缩放到长边 2000px 并转 JPEG</p>
+      </div>
+      <div class="busy" id="busy" hidden><div class="spin"></div><span id="busyText">识别中…</span></div>
+    </div>
+    <div class="pane-foot">
+      <textarea id="extra" rows="2" placeholder="附加要求（可选）：例如「忽略页眉页码」「公式保留编号」「按原图分行」"></textarea>
+      <button class="btn primary wide" id="run">识别并转成 Markdown　(Ctrl+Enter)</button>
+      <p class="note">
+        识别用 Google Gemini 免费档（<a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener">申请免费 Key</a> ·
+        <a href="https://ai.dev/rate-limit" target="_blank" rel="noopener">查看额度</a>），需要能访问 Google 的网络；
+        <b>图片会上传给 Google</b>，Key 只保存在本机浏览器 localStorage，不会写进这个 HTML 文件。
+      </p>
+    </div>
+  </section>
+
+  <div id="splitter" title="拖动调整左右宽度"></div>
+
+  <section class="pane">
+    <div class="pane-head">
+      <span class="pane-title">Markdown 源码</span>
+      <span class="meta" id="outMeta">—</span>
+      <span class="push"></span>
+      <button class="btn mini" id="copy">复制</button>
+      <button class="btn mini" id="download">下载 .md</button>
+    </div>
+    <textarea id="md" spellcheck="false" placeholder="识别结果出现在这里，可以直接编辑。&#10;&#10;行内公式 $...$，独立公式 $$...$$，普通文字保持纯文本。"></textarea>
+    <div class="status" id="status">就绪。点左上「选择图片」或直接 Ctrl+V 粘贴图片。</div>
+  </section>
+</main>
+
+<input type="file" id="file" accept="image/*" hidden>
+
+<!-- 本地私有别名表（已被 .gitignore 忽略，不存在也不影响使用） -->
+<script src="image-to-markdown.keys.local.js"></script>
+<script>
+(function(){
+  'use strict';
+
+  var LS = { key:'i2m.gkey', model:'i2m.model', extra:'i2m.extra', legacyKey:'i2m.key' };
+  var API_BASE = 'https://generativelanguage.googleapis.com/v1beta';
+  // 个人本地副本可以在这里填自己的 Key；仓库里的这份必须留空
+  var DEFAULT_KEY = '';
+  // 短代号 → 真实 Key 的映射。同目录下的「本地私有文件」会提供这份表：
+  //   image-to-markdown.keys.local.js  →  window.I2M_KEYS = { '你的短代号': '真实Key' }
+  // 该文件已被 .gitignore 忽略，不会推到 GitHub；文件不存在时这里就是空表，页面照常工作。
+  var KEY_ALIASES = (window.I2M_KEYS && typeof window.I2M_KEYS === 'object') ? window.I2M_KEYS : {};
+  // 拿不到模型列表时的兜底候选（实际以接口返回为准）
+  var FALLBACK_MODELS = ['gemini-flash-latest', 'gemini-3.8-flash', 'gemini-3.5-flash-lite', 'gemini-3.1-flash-lite'];
+  var MAX_SIDE = 2000;      // 上传前缩放到的最长边
+  var JPEG_QUALITY = 0.9;
+  var TIMEOUT_MS = 180000;  // 单次识别最长等待 3 分钟
+
+  var SYSTEM_PROMPT = [
+    '你是一个把图片内容精确转写成 Markdown 源码的转换器。严格按以下规则输出：',
+    '1. 只输出 Markdown 源码本身。不要任何解释、前言、结语，也不要用 ``` 代码围栏把整段内容包起来。',
+    '2. 图片里的普通文字必须原样保留（原来是中文就写中文，原来是英文就写英文），不要翻译、不要改写、不要总结、不要补充原图没有的内容。',
+    '3. 保留原图的结构：标题用 # 表示层级，列表用 Markdown 列表，表格用 Markdown 表格，段落按原图分段。',
+    '4. 所有数学公式转成 LaTeX：与文字混排的行内公式写成 $...$；单独占一行的公式写成 $$...$$ 并独立成段。公式必须写在它在原图中对应的位置，不要集中搬到末尾。',
+    '5. 只有真正构成数学表达式的部分才用 $...$ 包裹；公式以外的普通文字、以及单独出现的符号（如 Δ、α）保持普通字符。',
+    '6. 公式内部尽量不要出现中文，把中文说明移到公式外面；确实必须写在公式里时用 \\text{...}。',
+    '7. 无法辨认的字符写成 ⟨?⟩，不要猜测；不要输出图片说明、页码等原图没有的文字。'
+  ].join('\n');
+
+  var USER_TEXT = '把这张图片转成 Markdown 源码。';
+
+  var $ = function(s){ return document.querySelector(s); };
+  var el = {
+    model:$('#model'), key:$('#key'), clearKey:$('#clearKey'), testKey:$('#testKey'),
+    pick:$('#pick'), demoBtn:$('#demoBtn'), clearImg:$('#clearImg'),
+    drop:$('#drop'), thumb:$('#thumb'), empty:$('#empty'), imgMeta:$('#imgMeta'),
+    busy:$('#busy'), busyText:$('#busyText'), extra:$('#extra'), run:$('#run'),
+    md:$('#md'), outMeta:$('#outMeta'), status:$('#status'),
+    copy:$('#copy'), download:$('#download'), file:$('#file'),
+    main:$('#main'), splitter:$('#splitter')
+  };
+
+  var state = { dataUrl:null, w:0, h:0, srcW:0, srcH:0, bytes:0, name:'', busy:false };
+
+  /* ---------------- 小工具 ---------------- */
+  function lsGet(k, d){ try{ var v = localStorage.getItem(k); return v === null ? d : v; }catch(e){ return d; } }
+  function lsSet(k, v){ try{ localStorage.setItem(k, v); }catch(e){} }
+  function lsDel(k){ try{ localStorage.removeItem(k); }catch(e){} }
+  function fmtBytes(n){ return n >= 1048576 ? (n/1048576).toFixed(2)+' MB' : Math.max(1,Math.round(n/1024))+' KB'; }
+
+  // 把界面上输入的内容解析成真实 Key：先查代号表，查不到就当成 Key 原样用
+  function resolveKey(v){
+    var t = String(v || '').trim();
+    if (KEY_ALIASES[t]) return { key:KEY_ALIASES[t], alias:t };
+    return { key:t, alias:'' };
+  }
+  function setStatus(text, kind){ el.status.className = 'status' + (kind ? ' ' + kind : ''); el.status.textContent = text; }
+  function AppError(code, msg){ this.code = code; this.message = msg; }
+  AppError.prototype = Object.create(Error.prototype);
+
+  /* ---------------- 图片读取与预处理 ---------------- */
+  function decodeImage(file){
+    if (window.createImageBitmap) {
+      return createImageBitmap(file).catch(function(){ return decodeViaImg(file); });
+    }
+    return decodeViaImg(file);
+  }
+
+  function decodeViaImg(file){
+    return new Promise(function(resolve, reject){
+      var url = URL.createObjectURL(file);
+      var img = new Image();
+      img.onload = function(){ setTimeout(function(){ URL.revokeObjectURL(url); }, 1000); resolve(img); };
+      img.onerror = function(){ URL.revokeObjectURL(url); reject(new AppError('decode','图片解码失败，换一张 PNG / JPG 试试。')); };
+      img.src = url;
+    });
+  }
+
+  function preprocess(file){
+    var name = (file && file.name) ? file.name : '';
+    if (!file) return Promise.reject(new AppError('nofile','没有拿到图片数据。'));
+    if (file.type && file.type.indexOf('image/') !== 0) return Promise.reject(new AppError('nofile','请选择图片文件（PNG / JPG / WebP / BMP）。'));
+
+    return decodeImage(file).then(function(bmp){
+      var sw = bmp.naturalWidth || bmp.width, sh = bmp.naturalHeight || bmp.height;
+      if (!sw || !sh) throw new AppError('decode','图片尺寸读不到，换一张试试。');
+      var scale = Math.min(1, MAX_SIDE / Math.max(sw, sh));
+      var w = Math.max(1, Math.round(sw * scale)), h = Math.max(1, Math.round(sh * scale));
+      var cv = document.createElement('canvas');
+      cv.width = w; cv.height = h;
+      var ctx = cv.getContext('2d');
+      ctx.fillStyle = '#ffffff';
+      ctx.fillRect(0, 0, w, h);
+      if ('imageSmoothingQuality' in ctx) ctx.imageSmoothingQuality = 'high';
+      ctx.drawImage(bmp, 0, 0, w, h);
+      if (bmp.close) bmp.close();
+      var dataUrl = cv.toDataURL('image/jpeg', JPEG_QUALITY);
+      var bytes = Math.round((dataUrl.length - dataUrl.indexOf(',') - 1) * 3 / 4);
+      return { dataUrl:dataUrl, w:w, h:h, srcW:sw, srcH:sh, bytes:bytes, name:name };
+    });
+  }
+
+  function showImage(info, srcLabel){
+    state.dataUrl = info.dataUrl; state.w = info.w; state.h = info.h;
+    state.srcW = info.srcW; state.srcH = info.srcH; state.bytes = info.bytes; state.name = info.name || '';
+    el.thumb.src = info.dataUrl;
+    el.thumb.hidden = false;
+    el.empty.hidden = true;
+    var txt = info.w + ' × ' + info.h + ' · ' + fmtBytes(info.bytes);
+    if (info.srcW !== info.w) txt += ' · 原图 ' + info.srcW + '×' + info.srcH + ' 已缩放';
+    if (srcLabel) txt = srcLabel + ' · ' + txt;
+    el.imgMeta.textContent = txt;
+  }
+
+  function clearImage(){
+    state.dataUrl = null; state.name = ''; state.bytes = 0;
+    el.thumb.removeAttribute('src'); el.thumb.hidden = true; el.empty.hidden = false;
+    el.imgMeta.textContent = '未选择';
+  }
+
+  function loadFile(file){
+    setStatus('正在读取图片…');
+    return preprocess(file).then(function(info){
+      showImage(info);
+      setStatus('图片就绪：' + info.w + '×' + info.h + '，' + fmtBytes(info.bytes) + '。点「识别并转成 Markdown」开始。');
+      return info;
+    }).catch(function(err){
+      setStatus(err && err.message ? err.message : '读取图片失败。', 'err');
+      throw err;
+    });
+  }
+
+  /* ---------------- 调用 Gemini 接口 ---------------- */
+  function cleanupMarkdown(s){
+    var t = String(s || '').replace(/\r\n?/g, '\n').trim();
+    var fenced = t.match(/^```[a-zA-Z]*\n([\s\S]*?)\n?```$/);
+    if (fenced) t = fenced[1].trim();
+    t = t.replace(/\\\[([\s\S]*?)\\\]/g, function(m, p){ return '$$\n' + p.trim() + '\n$$'; });
+    t = t.replace(/\\\(([\s\S]*?)\\\)/g, function(m, p){ return '$' + p.trim() + '$'; });
+    return t;
+  }
+
+  // Gemini 错误体：{ error:{ code, message, status, details:[{RetryInfo:{retryDelay:"7s"}}] } }
+  function describeHttp(status, data, raw){
+    var err = (data && data.error) || {};
+    var msg = String(err.message || (data && data.message) || raw || '').slice(0, 300);
+    var gStatus = String(err.status || '');
+    var lower = msg.toLowerCase();
+
+    var keyProblem = lower.indexOf('api key not valid') >= 0 || lower.indexOf('api_key_invalid') >= 0 || lower.indexOf('invalid api key') >= 0;
+    if (status === 400 && (keyProblem || (gStatus === 'INVALID_ARGUMENT' && lower.indexOf('key') >= 0))) {
+      return 'API Key 无效（400）。请到 aistudio.google.com/apikey 重新复制一个 Key，注意别带空格、引号或换行。';
+    }
+    if (status === 400) return '请求被拒绝（400）。' + msg;
+    if (status === 403) return 'Key 没有权限，或当前网络所在地区不支持 Gemini（403 PERMISSION_DENIED）。' + msg;
+    if (status === 404) return '这个模型已经不可用（404，Google 常把 2.5 系这类旧模型对新用户下线）。已自动改用官方推荐的替代模型重试；若仍失败，请在下拉里换一个 flash 系模型。' + msg;
+    if (status === 429) {
+      var delay = '';
+      var details = err.details || [];
+      for (var i = 0; i < details.length; i++) {
+        if (details[i] && details[i].retryDelay) { delay = String(details[i].retryDelay).replace(/^(\d+)s$/, '$1 秒'); break; }
+      }
+      // 「limit: 0」表示这个模型不在免费档里，和额度用完是两回事
+      if (/limit:\s*0\b/.test(msg)) {
+        return '这个模型在免费档不可用（配额为 0，429）。请在上面的模型下拉里换成 flash / flash-lite 系的模型，例如 gemini-3.8-flash、gemini-2.5-flash。';
+      }
+      return '免费额度用完了，或请求太快被限流（429 RESOURCE_EXHAUSTED）。' +
+        (delay ? ('建议 ' + delay + ' 后重试。') : '稍后再试，或在上面换一个模型。') + ' 免费档有每分钟 / 每天次数上限。';
+    }
+    if (status >= 500) return 'Google 服务端繁忙或模型过载（' + status + '），已自动换模型重试；全部失败就稍后再点一次。' + msg;
+    return '请求失败（' + status + ' ' + gStatus + '）。' + msg;
+  }
+
+  function dataUrlToBase64(dataUrl){
+    var i = String(dataUrl || '').indexOf(',');
+    return i >= 0 ? String(dataUrl).slice(i + 1) : '';
+  }
+
+  function mimeOf(dataUrl){
+    var m = /^data:([^;,]+)/.exec(String(dataUrl || ''));
+    return m ? m[1] : 'image/jpeg';
+  }
+
+  // 拉取可用模型：只要能 generateContent 的
+  function listModels(rawKey){
+    var r = resolveKey(rawKey);
+    var key = r.key;
+    if (!r.alias && /^\d{6,12}$/.test(key)) {
+      return Promise.reject(new AppError('alias','这看起来是短代号，但同目录缺少私有文件 image-to-markdown.keys.local.js，无法换算出真实 Key。'));
+    }
+    if (!key) return Promise.reject(new AppError('nokey','还没有填 API Key。'));
+    return fetch(API_BASE + '/models?pageSize=200', { headers:{ 'x-goog-api-key': key } })
+      .catch(function(err){
+        throw new AppError('network','连不上 generativelanguage.googleapis.com：' + (err && err.message ? err.message : '网络错误') +
+          '。需要能访问 Google 的网络（大陆一般要走代理）。');
+      })
+      .then(function(res){
+        return res.text().then(function(text){
+          var data = null; try { data = JSON.parse(text); } catch(e){}
+          if (!res.ok) throw new AppError('http', describeHttp(res.status, data, text));
+          var models = (data && data.models) || [];
+          return models.filter(function(m){
+            var methods = m.supportedGenerationMethods || [];
+            return methods.indexOf('generateContent') >= 0;
+          }).map(function(m){
+            var id = String(m.name || '').replace(/^models\//, '');
+            return { id:id, label:(m.displayName || id) + '（' + id + '）' };
+          });
+        });
+      });
+  }
+
+  // 只保留能做「图片理解 + 文本输出」的对话模型，排掉 TTS / 音乐 / 生图 / 研究 / 机器人这些
+  var NOT_UNDERSTANDING = /(tts|lyria|image|transcribe|computer-use|deep-research|antigravity|robotics|embedding|aqa)/;
+  var usableCount = 0;
+
+  function scoreModel(id){
+    var s = 0;
+    if (NOT_UNDERSTANDING.test(id)) s += 1000;          // 基本不能用，排最后
+    if (id.indexOf('flash') >= 0) s -= 100;             // 优先 flash
+    if (id.indexOf('pro') >= 0) s -= 60;
+    if (id.indexOf('lite') >= 0) s += 30;               // flash 里 lite 次之
+    if (id === 'gemini-flash-latest') s -= 40;          // 官方跟随最新版，最稳
+    if (/preview|exp|thinking/.test(id)) s += 25;       // 预览版排后面
+    if (/^gemini-2\./.test(id)) s += 60;                // 2.x 已对新用户下线，排后面
+    return s;
+  }
+
+  function fillModels(list){
+    var sel = el.model, current = sel.value;
+    sel.innerHTML = '';
+    if (!list.length) list = FALLBACK_MODELS.map(function(id){ return { id:id, label:id }; });
+    list = list.slice().sort(function(a, b){ var d = scoreModel(a.id) - scoreModel(b.id); return d !== 0 ? d : a.id.localeCompare(b.id); });
+    list.forEach(function(m){
+      var o = document.createElement('option');
+      o.value = m.id; o.textContent = m.label;
+      sel.appendChild(o);
+    });
+    var keep = list.some(function(m){ return m.id === current; });
+    sel.value = keep ? current : list[0].id;
+    usableCount = list.filter(function(m){ return !NOT_UNDERSTANDING.test(m.id); }).length;
+    return sel.value;
+  }
+
+  // 本次要尝试的模型顺序：选中的那个优先，失败时自动换后面 1~2 个
+  function candidateModels(max){
+    var all = Array.prototype.map.call(el.model.options, function(o){ return o.value; }).filter(Boolean);
+    var sel = el.model.value;
+    var rest = all.filter(function(id){ return id !== sel && !NOT_UNDERSTANDING.test(id); });
+    rest.sort(function(a, b){ return scoreModel(a) - scoreModel(b); });
+    return [sel].concat(rest.slice(0, Math.max(0, (max || 2))));
+  }
+
+  function loadModels(silent){
+    var key = el.key.value.trim();
+    if (!key) { if (!silent) setStatus('先填 API Key 再加载模型列表。', 'warn'); return Promise.resolve(null); }
+    if (!silent) setStatus('正在验证 Key 并加载模型列表…');
+    return listModels(key).then(function(list){
+      var picked = fillModels(list);
+      lsSet(LS.model, picked);
+      var al = resolveKey(key).alias;
+      setStatus('Key 可用' + (al ? '（代号 ' + al + '）' : '') + '：共 ' + list.length + ' 个可用模型，其中 ' + usableCount +
+        ' 个能识图，默认用 ' + picked + '（已把 TTS / 生图 / 研究类模型排到最后）。', 'ok');
+      return list;
+    }).catch(function(err){
+      fillModels([]);
+      setStatus(err.message + '（已回退到内置候选模型）', 'err');
+      return null;
+    });
+  }
+
+  function convert(dataUrl, opts){
+    opts = opts || {};
+    var resolved = resolveKey(opts.key);
+    var key = resolved.key;
+    if (!dataUrl) return Promise.reject(new AppError('noimage','还没有图片。先选一张，或直接 Ctrl+V 粘贴。'));
+    if (!key) return Promise.reject(new AppError('nokey','还没有填 API Key。请到 aistudio.google.com/apikey 申请一个免费 Key，填到右上角输入框（只存本机浏览器）。'));
+    if (!resolved.alias && /^\d{6,12}$/.test(key)) {
+      return Promise.reject(new AppError('alias',
+        '这看起来是一串短代号，但当前页面没有代号表——同目录下缺少私有文件 image-to-markdown.keys.local.js（它只存在于你自己的电脑上，不会推到 GitHub）。请把该文件放回 HTML 旁边，或直接填完整 API Key。'));
+    }
+
+    var model = opts.model || el.model.value || FALLBACK_MODELS[0];
+    var extra = String(opts.extra || '').trim();
+    var userText = extra ? (USER_TEXT + '\n\n额外要求：' + extra) : USER_TEXT;
+
+    var body = {
+      systemInstruction: { parts:[{ text:SYSTEM_PROMPT }] },
+      contents: [{
+        role: 'user',
+        parts: [
+          { inline_data: { mime_type: mimeOf(dataUrl), data: dataUrlToBase64(dataUrl) } },
+          { text: userText }
+        ]
+      }],
+      generationConfig: { temperature: 0, responseMimeType: 'text/plain' }
+    };
+
+    var ctrl = ('AbortController' in window) ? new AbortController() : null;
+    var timer = ctrl ? setTimeout(function(){ ctrl.abort(); }, TIMEOUT_MS) : null;
+    var t0 = (window.performance || Date).now();
+
+    return fetch(API_BASE + '/models/' + encodeURIComponent(model) + ':generateContent', {
+      method:'POST',
+      headers:{ 'Content-Type':'application/json', 'x-goog-api-key': key },
+      body: JSON.stringify(body),
+      signal: ctrl ? ctrl.signal : undefined
+    }).catch(function(err){
+      if (timer) clearTimeout(timer);
+      if (err && err.name === 'AbortError') throw new AppError('timeout','等待超过 ' + (TIMEOUT_MS/1000) + ' 秒还没返回。图片太大或网络慢，可换小一点的图重试。');
+      throw new AppError('network','连不上 generativelanguage.googleapis.com：' + (err && err.message ? err.message : '网络错误') +
+        '。需要能访问 Google 的网络（大陆一般要走代理）。');
+    }).then(function(res){
+      if (timer) clearTimeout(timer);
+      return res.text().then(function(text){
+        var data = null;
+        try { data = JSON.parse(text); } catch(e){}
+        if (!res.ok) {
+          var e = new AppError('http', describeHttp(res.status, data, text));
+          e.status = res.status;
+          var m404 = /use models\/([A-Za-z0-9._\-]+)/i.exec(text || '');
+          if (res.status === 404 && m404) e.suggest = m404[1];
+          throw e;
+        }
+
+        // 被安全策略拦下时给出原始原因
+        var fb = data && data.promptFeedback;
+        if (fb && fb.blockReason) throw new AppError('blocked','这张图片被 Google 的安全策略拦下了（' + fb.blockReason + '）。换一张图再试。');
+
+        var cand = data && data.candidates && data.candidates[0];
+        var parts = (cand && cand.content && cand.content.parts) || [];
+        var content = parts.map(function(p){ return p && p.text ? p.text : ''; }).join('');
+        if (!content && cand && cand.finishReason && cand.finishReason !== 'STOP') {
+          throw new AppError('empty','模型没有返回内容（' + cand.finishReason + '）。换一张更清晰的图片，或换一个模型再试。');
+        }
+        var md = cleanupMarkdown(content);
+        if (!md) throw new AppError('empty','接口返回了空结果。换一张更清晰、分辨率更高的图片再试。');
+        return {
+          markdown: md,
+          model: model,
+          alias: resolved.alias,
+          usage: data.usageMetadata || null,
+          elapsed: (( window.performance || Date).now() - t0) / 1000
+        };
+      });
+    });
+  }
+
+  /* ---------------- 页面交互 ---------------- */
+  function busy(on, text){
+    state.busy = !!on;
+    el.busy.hidden = !on;
+    if (text) el.busyText.textContent = text;
+    el.run.disabled = !!on;
+    el.run.textContent = on ? '识别中…' : '识别并转成 Markdown　(Ctrl+Enter)';
+  }
+
+  // 依次尝试若干模型；503 繁忙 / 429 限流 / 404 模型下线时自动换下一个
+  function tryModels(models, extra){
+    return (function step(i, lastErr){
+      if (i >= models.length) return Promise.reject(lastErr);
+      var m = models[i];
+      if (i > 0) setStatus('上一个模型不可用，自动改用 ' + m + ' 重试…', 'warn');
+      else setStatus('正在用 ' + m + ' 识别…');
+      return convert(state.dataUrl, { key:el.key.value, model:m, extra:extra }).catch(function(err){
+        var status = err && err.status;
+        var retryable = (status === 503 || status === 429 || status === 404);
+        if (!retryable) throw err;
+        if (err.suggest && models.indexOf(err.suggest) < 0) models = models.concat([err.suggest]);
+        return step(i + 1, err);
+      });
+    })(0, null);
+  }
+
+  function run(){
+    if (state.busy) return Promise.resolve(null);
+    if (!state.dataUrl) { setStatus('还没有图片。先选一张，或直接 Ctrl+V 粘贴。', 'warn'); return Promise.resolve(null); }
+    busy(true, '识别中…');
+    return tryModels(candidateModels(2), el.extra.value)
+      .then(function(out){
+        el.md.value = out.markdown;
+        var u = out.usage || {};
+        el.outMeta.textContent = out.markdown.length + ' 字符';
+        setStatus('识别完成 · 用时 ' + out.elapsed.toFixed(1) + 's · ' + (u.totalTokenCount || '?') + ' tokens（其中图片与提示 ' +
+          (u.promptTokenCount || '?') + '）· 模型 ' + out.model + (out.alias ? ' · 代号 ' + out.alias : '') +
+          '。已填到右侧，可编辑后复制 / 下载。','ok');
+        return out;
+      })
+      .catch(function(err){
+        if (err && err.status === 404) loadModels(true).catch(function(){});
+        var msg = (err && err.message) ? err.message : '识别失败。';
+        setStatus(msg, 'err');
+        throw err;
+      })
+      .then(function(v){ busy(false); return v; }, function(e){ busy(false); throw e; });
+  }
+
+  function copyOut(){
+    var t = el.md.value;
+    if (!t.trim()) { setStatus('还没有可复制的内容。', 'warn'); return; }
+    var done = function(){ setStatus('已复制 ' + t.length + ' 个字符到剪贴板。','ok'); };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(t).then(done, function(){ legacyCopy(t, done); });
+    } else { legacyCopy(t, done); }
+  }
+  function legacyCopy(t, done){
+    el.md.select(); el.md.setSelectionRange(0, t.length);
+    try { document.execCommand('copy'); done(); } catch(e){ setStatus('复制失败，请手动全选复制。','err'); }
+  }
+
+  function downloadMd(){
+    var t = el.md.value;
+    if (!t.trim()) { setStatus('还没有可下载的内容。', 'warn'); return; }
+    var base = (state.name || 'image').replace(/\.[^.]+$/, '') || 'image';
+    var blob = new Blob([t], { type:'text/markdown;charset=utf-8' });
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url; a.download = base + '.md';
+    document.body.appendChild(a); a.click(); a.remove();
+    setTimeout(function(){ URL.revokeObjectURL(url); }, 3000);
+    setStatus('已下载 ' + base + '.md','ok');
+  }
+
+  /* ---------------- 示例图片（不调用接口） ---------------- */
+  function drawSample(){
+    var W = 900, H = 560, S = 2;
+    var cv = document.createElement('canvas');
+    cv.width = W * S; cv.height = H * S;
+    var c = cv.getContext('2d');
+    c.scale(S, S);
+    c.fillStyle = '#ffffff'; c.fillRect(0, 0, W, H);
+    c.fillStyle = '#111';
+    c.font = '600 30px "Microsoft YaHei",serif';
+    c.fillText('一元二次方程的求解', 60, 78);
+    c.font = '20px "Cambria","Microsoft YaHei",serif';
+    c.fillText('设方程 ax² + bx + c = 0，其中 a ≠ 0，', 60, 132);
+    c.fillText('判别式 Δ = b² − 4ac 决定根的个数。', 60, 168);
+    c.font = '600 22px "Microsoft YaHei",serif';
+    c.fillText('求根公式', 60, 236);
+    c.font = 'italic 24px "Cambria",serif';
+    c.fillText('x = ( −b ± √(b² − 4ac) ) / 2a', 250, 300);
+    c.font = '600 22px "Microsoft YaHei",serif';
+    c.fillText('变量说明', 60, 372);
+    c.font = '20px "Microsoft YaHei",serif';
+    c.fillText('• α、β 表示两个根，且 α + β = −b/a', 84, 414);
+    c.fillText('• n 表示幂次，n > −1 时积分收敛', 84, 452);
+    c.strokeStyle = '#333'; c.lineWidth = 1.4;
+    c.strokeRect(84, 480, 300, 52);
+    c.beginPath(); c.moveTo(84, 506); c.lineTo(384, 506); c.stroke();
+    c.beginPath(); c.moveTo(200, 480); c.lineTo(200, 532); c.stroke();
+    c.font = '18px "Microsoft YaHei",serif';
+    c.fillText('符号', 118, 500); c.fillText('含义', 250, 500);
+    c.fillText('Δ', 128, 526); c.fillText('判别式', 236, 526);
+    return cv.toDataURL('image/jpeg', 0.92);
+  }
+
+  var SAMPLE_MD = [
+    '# 一元二次方程的求解',
+    '',
+    '设方程 $ax^2 + bx + c = 0$，其中 $a \\ne 0$，判别式 $\\Delta = b^2 - 4ac$ 决定根的个数。',
+    '',
+    '## 求根公式',
+    '',
+    '$$',
+    'x = \\frac{-b \\pm \\sqrt{b^2 - 4ac}}{2a}',
+    '$$',
+    '',
+    '## 变量说明',
+    '',
+    '- $\\alpha$、$\\beta$ 表示两个根，且 $\\alpha + \\beta = -b/a$',
+    '- $n$ 表示幂次，$n > -1$ 时积分收敛',
+    '',
+    '| 符号 | 含义 |',
+    '| --- | --- |',
+    '| $\\Delta$ | 判别式 |'
+  ].join('\n');
+
+  function loadSample(autoRun){
+    var url = drawSample();
+    showImage({ dataUrl:url, w:900, h:560, srcW:900, srcH:560, bytes:Math.round(url.length*3/4), name:'sample' }, '示例');
+    if (!autoRun) {
+      el.md.value = SAMPLE_MD;
+      el.outMeta.textContent = SAMPLE_MD.length + ' 字符';
+      setStatus('示例模式：左侧是内置示例图，右侧是对应的 Markdown 示例（未调用接口、不消耗额度）。填好 Key 后点「识别并转成 Markdown」即可识别你自己的图片。','warn');
+    }
+  }
+
+  /* ---------------- 绑定事件 ---------------- */
+  function bind(){
+    el.pick.addEventListener('click', function(){ el.file.click(); });
+    el.drop.addEventListener('click', function(e){ if (e.target === el.thumb) return; el.file.click(); });
+    el.drop.addEventListener('keydown', function(e){ if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); el.file.click(); } });
+    el.file.addEventListener('change', function(){ if (el.file.files && el.file.files[0]) loadFile(el.file.files[0]).catch(function(){}); el.file.value = ''; });
+    el.clearImg.addEventListener('click', function(e){ e.stopPropagation(); clearImage(); setStatus('已清空图片。'); });
+    el.demoBtn.addEventListener('click', function(){ loadSample(false); });
+    el.run.addEventListener('click', function(){ run().catch(function(){}); });
+    el.copy.addEventListener('click', copyOut);
+    el.download.addEventListener('click', downloadMd);
+    el.md.addEventListener('input', function(){ el.outMeta.textContent = el.md.value.length + ' 字符'; });
+
+    el.key.addEventListener('change', function(){ lsSet(LS.key, el.key.value.trim()); loadModels(true).catch(function(){}); });
+    el.key.addEventListener('blur', function(){ lsSet(LS.key, el.key.value.trim()); });
+    el.testKey.addEventListener('click', function(){ loadModels(false).catch(function(){}); });
+    el.clearKey.addEventListener('click', function(){ el.key.value = ''; lsDel(LS.key); setStatus('已清除本机保存的 Key。'); });
+    el.model.addEventListener('change', function(){ lsSet(LS.model, el.model.value); });
+    el.extra.addEventListener('change', function(){ lsSet(LS.extra, el.extra.value); });
+    el.extra.addEventListener('blur', function(){ lsSet(LS.extra, el.extra.value); });
+
+    document.addEventListener('paste', function(e){
+      var items = (e.clipboardData && e.clipboardData.items) || [];
+      for (var i = 0; i < items.length; i++) {
+        if (items[i].type && items[i].type.indexOf('image/') === 0) {
+          var f = items[i].getAsFile();
+          if (f) { e.preventDefault(); loadFile(f).catch(function(){}); return; }
+        }
+      }
+    });
+
+    ['dragenter','dragover'].forEach(function(t){
+      document.addEventListener(t, function(e){ e.preventDefault(); el.drop.classList.add('over'); });
+    });
+    ['dragleave','drop'].forEach(function(t){
+      document.addEventListener(t, function(e){ if (t === 'dragleave' && e.relatedTarget) return; el.drop.classList.remove('over'); });
+    });
+    document.addEventListener('drop', function(e){
+      e.preventDefault();
+      var files = (e.dataTransfer && e.dataTransfer.files) || [];
+      for (var i = 0; i < files.length; i++) {
+        if (files[i].type && files[i].type.indexOf('image/') === 0) { loadFile(files[i]).catch(function(){}); return; }
+      }
+      setStatus('拖进来的不是图片文件。','warn');
+    });
+
+    document.addEventListener('keydown', function(e){
+      var mod = e.ctrlKey || e.metaKey;
+      if (mod && e.key === 'Enter') { e.preventDefault(); run().catch(function(){}); }
+      else if (mod && e.key.toLowerCase() === 's') { e.preventDefault(); downloadMd(); }
+    });
+
+    // 左右分栏拖动
+    var dragging = false;
+    el.splitter.addEventListener('pointerdown', function(e){
+      dragging = true; el.splitter.classList.add('active');
+      el.splitter.setPointerCapture(e.pointerId);
+    });
+    el.splitter.addEventListener('pointermove', function(e){
+      if (!dragging) return;
+      var rect = el.main.getBoundingClientRect();
+      var x = Math.min(Math.max(e.clientX - rect.left, 280), rect.width - 286);
+      el.main.style.gridTemplateColumns = x + 'px 6px minmax(280px,1fr)';
+    });
+    ['pointerup','pointercancel'].forEach(function(t){
+      el.splitter.addEventListener(t, function(){ dragging = false; el.splitter.classList.remove('active'); });
+    });
+  }
+
+  /* ---------------- 初始化 ---------------- */
+  function init(){
+    bind();
+    lsDel(LS.legacyKey); // 清掉上一版遗留的 Key 键名，避免误解
+    // 优先级：浏览器里存过的 > 文件里写死的 > 别名表里的第一个代号
+    var aliasList = Object.keys(KEY_ALIASES);
+    var savedKey = lsGet(LS.key, '') || DEFAULT_KEY || (aliasList.length ? aliasList[0] : '');
+    if (savedKey) el.key.value = savedKey;
+    fillModels([]);
+    var savedModel = lsGet(LS.model, '');
+    if (savedModel && Array.prototype.some.call(el.model.options, function(o){ return o.value === savedModel; })) el.model.value = savedModel;
+    var savedExtra = lsGet(LS.extra, ''); if (savedExtra) el.extra.value = savedExtra;
+    if (el.key.value.trim()) {
+      setStatus('已读取本机保存的 API Key，正在加载模型列表…');
+      loadModels(true).catch(function(){});
+    }
+
+    var q = new URLSearchParams(location.search);
+    if (q.has('demo')) loadSample(q.get('auto') === '1');
+    if (q.get('auto') === '1' && state.dataUrl) setTimeout(function(){ run().catch(function(){}); }, 60);
+  }
+
+  window.I2M = {
+    convert: convert,
+    run: run,
+    setImage: function(dataUrl, meta){ showImage(Object.assign({ dataUrl:dataUrl, w:0, h:0, srcW:0, srcH:0, bytes:0, name:'' }, meta || {})); },
+    loadFile: loadFile,
+    getMarkdown: function(){ return el.md.value; },
+    setMarkdown: function(t){ el.md.value = t; },
+    sample: drawSample,
+    listModels: listModels,
+    loadModels: loadModels,
+    SYSTEM_PROMPT: SYSTEM_PROMPT,
+    state: state
+  };
+
+  if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+</script>
+</body>
+</html>

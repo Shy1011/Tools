@@ -1,0 +1,4 @@
+# 本地个人文件：可能包含 API Key，请勿提交
+*.local.html
+*.local.*
+*.key
