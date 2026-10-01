@@ -39,25 +39,7 @@
 
 ![预览截图](xy-plotter-preview.png)
 
-### 3. SVG 代码预览 / 导出(`svg-preview.html`)
-
-把 SVG 代码粘贴进来即可实时预览,并导出为 SVG 或 PNG 图片,适合快速检查设计稿、图标或整理素材。
-
-功能:
-
-- 实时预览:左侧粘贴代码、右侧即时渲染;可关闭实时预览改用「立即渲染」或 `Ctrl+Enter`
-- 容错解析:代码缺少 `xmlns` 会自动补全;语法错误时在预览区给出具体报错信息
-- 安全模式(默认开启):自动移除 `<script>` 与 `on*` 事件属性
-- 代码整理:一键格式化与压缩;`<text>`、`<tspan>`、`<style>` 等空白敏感元素保持内联,不会改变文字渲染
-- 导出 SVG:自动补全命名空间并加上 XML 声明,下载为 `.svg`(快捷键 `Ctrl+S`)
-- 导出 PNG:可选 1x / 2x / 4x 分辨率,背景跟随预览(透明格 = 透明底)
-- 查看辅助:自适应 / 1:1 / `Ctrl+滚轮` 缩放,透明格 / 白 / 黑 / 灰四档预览背景,并显示尺寸与元素数量
-- 载入方式:拖入 `.svg` 文件、`Ctrl+O` 打开、从剪贴板一键读取,或直接 `Ctrl+V` 粘贴
-- 自动保存:当前代码保存在浏览器本地,刷新后自动恢复;纯本地运行,不上传任何数据
-
-![预览截图](svg-preview-preview.png)
-
-### 4. SVG 转可编辑 PPT(`svg-to-pptx.html`)
+### 3. SVG 转可编辑 PPT(`svg-to-pptx.html`)
 
 把 SVG 文件或代码转成 PowerPoint 幻灯片,且**每一个元素都是 PPT 原生对象**(矩形、圆、自由曲线、连接线、文本框),不是贴图,可以在 PPT 里继续改颜色、改文字、拖动位置。
 
@@ -69,13 +51,13 @@
 - 样式还原:实色填充、描边宽度、虚线、线帽/拐角、透明度、`<style>` 与 class、`transform`(平移/旋转/缩放/斜切,全部烘焙进坐标)、`<use>`/`<symbol>` 展开
 - 降级透明:渐变/图案按色标平均色近似、滤镜/遮罩/裁剪不应用、`<image>` 位图与 `<textPath>` 跳过 —— 每一条都会在左侧面板逐条列出,绝不静默丢内容
 - 多页合并:多个 SVG 一次导出为一个 PPTX;画布尺寸不一致时自动等比缩放居中并提示
-- 同时保留 PNG(1x / 2x / 4x)与 SVG 导出;`Ctrl+S` 导出 PPTX、`Ctrl+O` 打开文件、`Ctrl+Enter` 立即渲染
+- 同时保留 PNG(1x / 2x / 4x)与 SVG 导出,并新增**一键复制 SVG 源码**(粘贴到编辑器或存成 `.svg` 都行);`Ctrl+S` 导出 PPTX、`Ctrl+O` 打开文件、`Ctrl+Enter` 立即渲染
 - 自动保存当前文件列表到浏览器本地,刷新后恢复;纯本地运行,不上传任何数据,零第三方依赖(PPTX 由页面内自带的 OOXML + ZIP 写入器现场生成)
 - 实测:导出的 PPTX 用 PowerPoint 打开无「需要修复」提示,幻灯片尺寸与 SVG 画布 1:1(96dpi),形状位置与原图一致
 
 ![预览截图](svg-to-pptx-preview.png)
 
-### 5. 图片公式转 Markdown(`image-to-markdown.html`)
+### 4. 图片公式转 Markdown(`image-to-markdown.html`)
 
 把图片里的**普通文字和数学公式分开**,公式转成 LaTeX,直接输出可复制的 Markdown 源码。适合整理教材截图、论文公式、板书照片、Word 里的公式截图。识别用 **Google Gemini 免费档**,不需要付费服务。
 
@@ -126,8 +108,6 @@
 | `bit-to-hex-x6-preview.png` | 工具预览截图 |
 | `xy-plotter.html` | XY 曲线绘图·简易版 |
 | `xy-plotter-preview.png` | 工具预览截图 |
-| `svg-preview.html` | SVG 代码预览 / 导出工具页 |
-| `svg-preview-preview.png` | 工具预览截图 |
 | `svg-to-pptx.html` | SVG 转可编辑 PPT 工具页 |
 | `svg-to-pptx-preview.png` | 工具预览截图 |
 | `image-to-markdown.html` | 图片公式转 Markdown 工具页 |

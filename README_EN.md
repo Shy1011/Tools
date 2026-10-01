@@ -39,25 +39,7 @@ Features:
 
 ![Preview](xy-plotter-preview.png)
 
-### 3. SVG Preview / Export (`svg-preview.html`)
-
-Paste SVG code in to get a live preview and export it as an SVG or PNG image — handy for checking designs, icons, or preparing assets.
-
-Features:
-
-- Live preview: paste on the left, render on the right; turn live mode off to use "Render now" or `Ctrl+Enter`
-- Tolerant parsing: a missing `xmlns` is filled in automatically; syntax errors are reported with details in the preview area
-- Safe mode (on by default): strips `<script>` and `on*` event attributes
-- Code cleanup: one-click format and minify; whitespace-sensitive elements such as `<text>`, `<tspan>`, and `<style>` are kept inline so text rendering never changes
-- SVG export: fills in the namespace and an XML declaration, then downloads a `.svg` file (`Ctrl+S`)
-- PNG export: 1x / 2x / 4x resolution, with the background following the preview (checkerboard = transparent)
-- Viewing aids: fit / 1:1 / `Ctrl+wheel` zoom, four preview backgrounds (checkerboard / white / black / gray), plus size and element count readouts
-- Loading: drag and drop a `.svg` file, `Ctrl+O` to open, read from the clipboard, or paste directly with `Ctrl+V`
-- Auto-save: the current code is stored in the browser and restored on refresh; everything runs locally and nothing is uploaded
-
-![Preview](svg-preview-preview.png)
-
-### 4. SVG → Editable PowerPoint (`svg-to-pptx.html`)
+### 3. SVG → Editable PowerPoint (`svg-to-pptx.html`)
 
 Turn SVG files or code into a PowerPoint slide deck where **every element is a native PowerPoint object** — auto shapes, freeforms, connectors, and text boxes, never an embedded picture — so the deck stays editable in Office.
 
@@ -69,13 +51,13 @@ Features:
 - Styling: solid fills, stroke width, dash patterns, line caps / joins, opacity, `<style>` and class rules, `transform` (translate / rotate / scale / skew, all baked into coordinates), `<use>` / `<symbol>` expansion
 - Honest degradation: gradients and patterns are approximated by their average stop colour, filters / masks / clip paths are not applied, `<image>` bitmaps and `<textPath>` are skipped — every one of them is listed item by item in the left panel, nothing is dropped silently
 - Multi-page: several SVGs export into a single PPTX; differing canvas sizes are scaled and centred automatically with a notice
-- PNG (1x / 2x / 4x) and SVG export are kept as well; `Ctrl+S` exports the PPTX, `Ctrl+O` opens files, `Ctrl+Enter` re-renders
+- PNG (1x / 2x / 4x) and SVG export are kept as well, plus **one-click copy of the SVG source** (paste it into an editor or save it as a `.svg`); `Ctrl+S` exports the PPTX, `Ctrl+O` opens files, `Ctrl+Enter` re-renders
 - The file list is auto-saved in the browser and restored on refresh; everything runs locally, nothing is uploaded, and there are zero third-party dependencies (the PPTX is built in-page by a bundled OOXML + ZIP writer)
 - Verified: the exported PPTX opens in PowerPoint with no repair prompt, the slide size matches the SVG canvas 1:1 (96 dpi), and shapes land where the SVG put them
 
 ![Preview](svg-to-pptx-preview.png)
 
-### 5. Image Formulas → Markdown (`image-to-markdown.html`)
+### 4. Image Formulas → Markdown (`image-to-markdown.html`)
 
 Paste a picture of text mixed with math, and get back **Markdown source with the plain text and the formulas separated** — every formula converted to LaTeX. Handy for textbook screenshots, paper equations, whiteboard photos, and formula screenshots from Word. Recognition runs on the **Google Gemini free tier**, so no paid service is involved.
 
@@ -126,8 +108,6 @@ Before you start you need:
 | `bit-to-hex-x6-preview.png` | Tool preview screenshot |
 | `xy-plotter.html` | XY plotter · simple edition |
 | `xy-plotter-preview.png` | Tool preview screenshot |
-| `svg-preview.html` | SVG preview / export tool page |
-| `svg-preview-preview.png` | Tool preview screenshot |
 | `svg-to-pptx.html` | SVG → editable PowerPoint tool page |
 | `svg-to-pptx-preview.png` | Tool preview screenshot |
 | `image-to-markdown.html` | Image formulas → Markdown tool page |

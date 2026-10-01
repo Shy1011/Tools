@@ -196,13 +196,14 @@
       </label>
       <span class="sep"></span>
       <button class="btn primary" id="btnPptx" title="导出可编辑 PPTX (Ctrl+S)">⬇ 导出可编辑 PPTX</button>
-      <button class="btn" id="btnPng" title="导出当前预览为 PNG">PNG</button>
+      <button class="btn" id="btnPng" title="导出当前预览为 PNG">⬇ PNG</button>
       <select id="pngScale" title="PNG 分辨率">
         <option value="1">1x</option>
         <option value="2" selected>2x</option>
         <option value="4">4x</option>
       </select>
-      <button class="btn" id="btnSvg" title="导出当前 SVG">SVG</button>
+      <button class="btn" id="btnSvg" title="导出当前 SVG 文件">⬇ SVG</button>
+      <button class="btn" id="btnCopySvg" title="复制当前 SVG 源码到剪贴板">📋 复制 SVG</button>
     </div>
   </header>
 
@@ -1819,6 +1820,30 @@
     var text = '<?xml version="1.0" encoding="UTF-8"?>\n' + serialize(currentSvg);
     download(new Blob([text], { type: 'image/svg+xml;charset=utf-8' }), baseName(currentFile().name) + '.svg');
   }
+  function copySvg() {
+    if (!currentSvg) { setStatus('没有可复制的 SVG', 'warn'); return; }
+    var text = '<?xml version="1.0" encoding="UTF-8"?>\n' + serialize(currentSvg);
+    var done = function () {
+      setStatus('已复制 SVG 源码（' + text.length + ' 字符）· 可直接粘进编辑器，或存成 .svg 文件', 'ok');
+    };
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(text).then(done, function () { copySvgFallback(text, done); });
+    } else {
+      copySvgFallback(text, done);
+    }
+  }
+  function copySvgFallback(text, done) {
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.top = '-1000px';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); done(); } catch (e) { setStatus('复制失败：浏览器拒绝了剪贴板权限，请用「⬇ SVG」下载文件', 'err'); }
+    ta.remove();
+  }
   function exportPng() {
     if (!currentSvg) { setStatus('没有可导出的 SVG', 'warn'); return; }
     var scale = parseFloat($('pngScale').value) || 1;
@@ -1869,6 +1894,7 @@
   $('btnPptx').addEventListener('click', exportPptx);
   $('btnPng').addEventListener('click', exportPng);
   $('btnSvg').addEventListener('click', exportSvg);
+    $('btnCopySvg').addEventListener('click', copySvg);
   $('btnOpen').addEventListener('click', function () { fileInput.click(); });
   $('btnDir').addEventListener('click', function () { dirInput.click(); });
   fileInput.addEventListener('change', function () {
