@@ -116,6 +116,14 @@ Features:
 
 > The only exception is "Image Formulas → Markdown": it needs your own free Google Gemini key and a network connection (the image is uploaded to Google). Every other tool works fully offline.
 
+### Install as a desktop app (PWA)
+
+The home page is a full PWA: open <https://shy1011.github.io/Tools/> in Chrome / Edge and click the Install icon in the address bar (or menu → "Install Tools 工具集"). It opens in its own window and **works offline** — every tool page is precached.
+
+- Icons and launch settings live in `manifest.json`; icon files are in `icons/` (192 / 512 / maskable / apple-touch / favicon.ico)
+- Offline support comes from `sw.js`: navigations are network-first with a cache fallback, static assets are cache-first with a background refresh
+- Service workers do not run when you open the page via `file://`; install requires `http(s)://`
+
 ## File Structure
 
 | File | Description |

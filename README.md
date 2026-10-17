@@ -116,6 +116,14 @@
 
 > 唯一例外是「图片公式转 Markdown」:它需要在页面里填一个自己的 Google Gemini 免费 Key 并联网(图片会上传给 Google),其余工具完全离线。
 
+### 安装为桌面应用(PWA)
+
+首页是一个完整的 PWA:用 Chrome / Edge 打开 <https://shy1011.github.io/Tools/> ,点地址栏右侧的「安装」图标(或菜单 → 「安装 Tools 工具集」),即可加到桌面 / 开始菜单;安装后是独立窗口,并且**断网也能打开**(各工具页已预缓存)。
+
+- 图标与启动配置在 `manifest.json`,图标文件在 `icons/`(`192` / `512` / maskable / apple-touch / favicon.ico)
+- 离线能力由 `sw.js` 提供:页面导航走「网络优先、断网回退缓存」,静态资源走「缓存优先、后台更新」
+- 本地双击 `file://` 打开时 Service Worker 不会生效(浏览器限制),需要 `http(s)://` 才能安装
+
 ## 目录结构
 
 | 文件 | 说明 |
