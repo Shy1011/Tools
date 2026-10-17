@@ -92,6 +92,22 @@ Before you start you need:
 
 ![Preview](image-to-markdown-preview.png)
 
+### 5. All-in-One Calculator (`calculator.html`)
+
+Takes the pieces of the Windows Calculator that normally live behind mode switches and puts them **side by side on one page**, sharing a single "current value": compute something in the scientific panel and the programmer panel immediately shows its HEX / BIN, and the unit converter can pick it up in one click.
+
+Features:
+
+- Calculator (standard + scientific): arithmetic, parentheses, `xʸ`, `√`/`∛`, `n!`, `π`/`e`, `ln`/`log`, trig / inverse trig (plus sinh / cosh / tanh), `|x|`, `1/x`; supports implicit multiplication (`2π`, `3(4+5)`) and auto-closes unclosed parentheses
+- DEG / RAD / GRAD angle modes; history (click to recall) and memory keys MC/MR/MS/M+/M−, persisted in the browser
+- Programmer: live HEX / DEC / OCT / BIN, BYTE / WORD / DWORD / QWORD widths (64-bit via BigInt), signed / unsigned interpretation, a 64-cell clickable bit grid, and AND / OR / XOR / NOT / shifts / rotates / integer arithmetic
+- Unit converter: 12 offline categories — length, mass, area, volume, temperature, data, speed, time, pressure, energy, power, angle; data units distinguish decimal (KB) from binary (KiB). **No currency rates**
+- Date calculator: difference between two dates (y/m/d plus total days and weeks) and add/subtract years, months, weeks, days with end-of-month clamping
+- A persistent "current value" bar showing DEC / HEX / BIN with copy, send-to-programmer and send-to-converter actions
+- Automatic light / dark theme, single-column stacking on narrow screens, and everything runs locally — nothing is uploaded
+
+![Preview](calculator-preview.png)
+
 ## Usage
 
 1. Clone or download this repository;
@@ -112,6 +128,8 @@ Before you start you need:
 | `svg-to-pptx-preview.png` | Tool preview screenshot |
 | `image-to-markdown.html` | Image formulas → Markdown tool page |
 | `image-to-markdown-preview.png` | Tool preview screenshot |
+| `calculator.html` | All-in-one calculator (scientific / programmer / converter / date) |
+| `calculator-preview.png` | Tool preview screenshot |
 | `README.md` | Chinese documentation |
 | `README_EN.md` | This documentation (English) |
 
@@ -122,6 +140,7 @@ Before you start you need:
 - In the plotter, title / axis label positions and curve data are saved locally in the current browser; log axes automatically skip 0 and negative values
 - The SVG → PPT tool parses SVG with the browser DOM (so CSS / class / `style` rules and `transform` are resolved for free) and then writes the PPTX and ZIP packages directly from the DrawingML specification — hence no third-party library. The page also exposes `window.S2P.convert(...)` plus the `?qa=` / `?qaFile=` entry points used by the automated regression checks
 - The image → Markdown tool calls Google Gemini's `generativelanguage.googleapis.com/v1beta` endpoint directly from the browser with `fetch` (it sends permissive CORS headers, so a static page opened from `file://` can call it with no server), authenticating with the `x-goog-api-key` header and passing the image as base64 `inline_data`, with a `systemInstruction` pinning the output format. The page exposes `window.I2M.convert(dataUrl, {key, model, extra})` and `I2M.listModels(key)`, and supports `?demo=1` (loads a built-in sample image, no API call) and `?demo=1&auto=1` (runs one real recognition on the sample) for automated checks
+- The all-in-one calculator evaluates expressions with its own tokenizer + recursive-descent parser (no `eval`; `^` is right-associative, unary minus binds looser than exponentiation, and `50%` is plain 0.5). The programmer panel uses `BigInt` internally for 64-bit values and bitwise operations, masking to the selected width; the page exposes `window.CALC.evaluate(src)` and friends for automated tests
 
 ## License
 

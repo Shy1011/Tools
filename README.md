@@ -92,6 +92,22 @@
 
 ![预览截图](image-to-markdown-preview.png)
 
+### 5. 全能计算器(`calculator.html`)
+
+把 Windows 计算器里要来回切换的几块**放进同一页并排显示**,而且共享同一个「当前值」:在科学区算出一个结果,程序员区立刻同步它的 HEX / BIN,单位换算区一键取用。不用再切模式。
+
+功能:
+
+- 计算器(标准 + 科学):四则运算、括号、`xʸ`、`√`/`∛`、`n!`、`π`/`e`、`ln`/`log`、三角/反三角(含 sinh/cosh/tanh)、`|x|`、`1/x`;支持隐式乘法(`2π`、`3(4+5)`)与未闭合括号自动补齐
+- 角度制 DEG / RAD / GRAD 可切;历史记录(点击回填)与记忆键 MC/MR/MS/M+/M−,均保存在浏览器本地
+- 程序员:HEX / DEC / OCT / BIN 四进制实时联动,位宽 BYTE / WORD / DWORD / QWORD(64 位用 BigInt 精确),有符号/无符号解释,64 格逐位点击翻转,支持 AND / OR / XOR / NOT / 移位 / 循环移位 / 四则整数运算
+- 单位换算:长度、质量、面积、体积、温度、数据、速度、时间、压强、能量、功率、角度共 12 类,全部离线换算;数据单位区分 1000 进制(KB)与 1024 进制(KiB)。**不含货币汇率**
+- 日期计算:两个日期之差(年/月/天 + 合计天数 + 周数),以及从某日期加减年月周天(月末自动夹到当月最后一天)
+- 顶部「当前值」条始终显示十进制 / HEX / BIN,可一键复制、一键送入程序员或换算面板
+- 浅色 / 深色自动适配,窄屏自动堆叠;纯本地运行,不上传任何数据
+
+![预览截图](calculator-preview.png)
+
 ## 使用方法
 
 1. 克隆或下载本仓库;
@@ -112,6 +128,8 @@
 | `svg-to-pptx-preview.png` | 工具预览截图 |
 | `image-to-markdown.html` | 图片公式转 Markdown 工具页 |
 | `image-to-markdown-preview.png` | 工具预览截图 |
+| `calculator.html` | 全能计算器(科学 / 程序员 / 换算 / 日期) |
+| `calculator-preview.png` | 工具预览截图 |
 | `README.md` | 本说明文件 |
 | `README_EN.md` | English documentation |
 
@@ -122,6 +140,7 @@
 - 曲线工具中,标题 / 轴标签位置与曲线数据均保存在当前浏览器本地;Log 坐标会自动跳过 0 和负数
 - SVG 转 PPT 工具用浏览器 DOM 解析 SVG(自动解析 CSS / class / `style` 与 `transform`),再按 DrawingML 规范现场生成 PPTX 与 ZIP 包,因此不需要任何第三方库;页面还对外暴露 `window.S2P.convert(...)` 与 `?qa=` / `?qaFile=` 两个自动化测试入口,方便脚本回归验证转换结果
 - 图片转 Markdown 工具用浏览器 `fetch` 直连 Google Gemini 的 `generativelanguage.googleapis.com/v1beta` 接口(该接口返回允许跨域的响应头,所以纯静态页面从 `file://` 打开也能直接调用),鉴权走 `x-goog-api-key` 请求头,图片以 base64 `inline_data` 传入,由 `systemInstruction` 约束输出格式;页面暴露 `window.I2M.convert(dataUrl, {key, model, extra})` 与 `I2M.listModels(key)`,并支持 `?demo=1`(加载内置示例图,不调用接口)与 `?demo=1&auto=1`(示例图直接跑一次识别)两个自动化入口
+- 全能计算器用自己实现的词法分析 + 递归下降解析器计算表达式(不使用 `eval`,幂运算右结合、一元负号优先级低于乘方,`50%` 按纯数学语义等于 0.5);程序员面板内部用 `BigInt` 处理 64 位数值与位运算,按所选位宽掩码截断;页面暴露 `window.CALC.evaluate(src)` 等接口供自动化测试
 
 ## License
 
