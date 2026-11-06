@@ -33,8 +33,8 @@ Features:
 - Point picking: click a data point to add/remove a marker, mark multiple points at once with coordinates listed, one-click "Clear all markers"
 - Tick modes: auto pretty numbers (1/2/5×10ⁿ), N equal segments, fixed step, data point positions, custom tick list
 - Interaction: click the legend to show/hide curves, hover to show the curve name and exact coordinates, box-select zoom, hold Space or "Pan" to drag, double-click to reset the view
-- Data export / import: one-click CSV export, or an Excel workbook with a data sheet and a separate notes sheet; wide CSV / TXT files can also be loaded to restore multiple curves
-- Notes: enter plot-independent experiment notes in the sidebar; they are saved automatically and exported to their own Excel sheet
+- Data export / import: one-click CSV export (curve name, x, y — opens in Excel), and load same-format CSV / TXT to restore multiple curves
+- Notes: enter plot-independent experiment notes in the sidebar; they are saved automatically
 - Auto-save: title, axis label text/font/size/color and positions, axis and tick settings, and curve data are all saved in the current browser and restored on refresh
 - PNG export; light / dark theme toggle; fully offline with no external dependencies
 
