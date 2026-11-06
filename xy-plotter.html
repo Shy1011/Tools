@@ -104,7 +104,8 @@ input:focus, select:focus, textarea:focus{
     <button id="exampleBtn" class="btn" type="button">示例</button>
     <button id="clearBtn" class="btn" type="button">清空</button>
     <button id="pngBtn" class="btn" type="button">导出 PNG</button>
-    <button id="exportDataBtn" class="btn" type="button">导出数据</button>
+    <button id="exportDataBtn" class="btn" type="button">导出 CSV</button>
+    <button id="exportExcelBtn" class="btn" type="button">导出 Excel</button>
     <button id="loadDataBtn" class="btn" type="button">载入数据…</button>
     <input id="dataFileInput" type="file" accept=".csv,.txt" hidden>
     <button id="panBtn" class="btn" type="button">平移</button>
@@ -158,6 +159,16 @@ input:focus, select:focus, textarea:focus{
           <div class="info-line" id="selInfo">点击数据点可添加标记</div>
           <div class="row"><button id="clearSelBtn" class="btn-sm" type="button">清除全部标记</button></div>
           <div class="row"><label class="chk"><input id="markerArrowChk" type="checkbox" checked> 标记指引箭头</label></div>
+        </div>
+      </details>
+
+      <details class="sec" open>
+        <summary>解释说明</summary>
+        <div class="sec-body">
+          <label class="f">说明文字（不显示在图中）
+            <textarea id="explanationInput" rows="6" placeholder="输入实验条件、测量方法或结果说明…"></textarea>
+          </label>
+          <div class="hint">仅保存在当前浏览器，并在「导出 Excel」时写入独立的「说明」Sheet；不会显示在曲线图或 PNG 中。</div>
         </div>
       </details>
 
@@ -268,7 +279,7 @@ input:focus, select:focus, textarea:focus{
             · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点,隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
-            · 导出 CSV 为英文表头的宽表格式:每条曲线 X、Y 两列并排(4 条曲线即 8 列),可直接用 Excel 打开;旧版中文长格式 CSV 仍可载入<br>
+            · 导出 CSV 为英文表头的宽表格式:每条曲线 X、Y 两列并排;导出 Excel 时数据写入「曲线数据」Sheet,解释说明写入独立「说明」Sheet<br>
             · Log 坐标会自动跳过 0 和负数<br>
             · Log 坐标范围较小时会自动细分刻度并标注(如 0.1–0.7 会标出 0.1、0.2、…、0.7)
           </div>
@@ -1533,6 +1544,8 @@ $('pngBtn').addEventListener('click', () => {
   }, 'image/png');
 });
 $('exportDataBtn').addEventListener('click', exportData);
+$('exportExcelBtn').addEventListener('click', exportExcel);
+$('explanationInput').addEventListener('input', scheduleSave);
 $('loadDataBtn').addEventListener('click', () => $('dataFileInput').click());
 $('dataFileInput').addEventListener('change', () => {
   if ($('dataFileInput').files[0]) loadDataFromFile($('dataFileInput').files[0]);
@@ -1903,9 +1916,9 @@ function csvField(v) {
   return /[",\n\r]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
 }
 
-function exportData() {
+function buildExportRows() {
   const valid = curves.filter((c) => c.xs.length);
-  if (!valid.length) { warn('没有可导出的数据'); return; }
+  if (!valid.length) { warn('没有可导出的数据'); return null; }
   const rows = [
     ['Title', $('titleInput').value.trim()],
     ['X Axis', $('xLabelInput').value.trim()],
@@ -1913,28 +1926,28 @@ function exportData() {
     ['Title Size', $('titleSize').value],
     ['X Axis Size', $('xLabelSize').value],
     ['Y Axis Size', $('yLabelSize').value]
-  ].map((r) => r.map(csvField).join(','));
+  ];
   const cfgExport = readConfig();
-  rows.push('X Axis Mode,' + scaleModeName(cfgExport.xScale));
-  rows.push('Y Axis Mode,' + scaleModeName(cfgExport.yScale));
-  for (const c of valid) rows.push('Line Width,' + csvField(c.name) + ',' + (c.width || 2));
+  rows.push(['X Axis Mode', scaleModeName(cfgExport.xScale)]);
+  rows.push(['Y Axis Mode', scaleModeName(cfgExport.yScale)]);
+  for (const c of valid) rows.push(['Line Width', c.name, c.width || 2]);
   if (selected.length) {
-    rows.push('');
-    rows.push('Marker,Curve,X,Y,DX,DY');
+    rows.push([]);
+    rows.push(['Marker', 'Curve', 'X', 'Y', 'DX', 'DY']);
     for (const s of selected) {
       const c = curves[s.ci];
       if (!c || s.xi >= c.xs.length) continue;
-      rows.push('Marker,' + csvField(c.name) + ',' + c.xs[s.xi] + ',' + c.ys[s.xi] +
-        ',' + (isFinite(s.dx) ? s.dx : '') + ',' + (isFinite(s.dy) ? s.dy : ''));
+      rows.push(['Marker', c.name, c.xs[s.xi], c.ys[s.xi],
+        isFinite(s.dx) ? s.dx : '', isFinite(s.dy) ? s.dy : '']);
     }
   }
-  rows.push('');
+  rows.push([]);
   const heads = [];
   for (const c of valid) {
-    heads.push(csvField(c.name) + ' X');
-    heads.push(csvField(c.name) + ' Y');
+    heads.push(c.name + ' X');
+    heads.push(c.name + ' Y');
   }
-  rows.push(heads.join(','));
+  rows.push(heads);
   const dispAll = valid.map((c) => (exportClean ? getDisplayData(c, readConfig().xScale === 'log') : c));
   const maxN = Math.max.apply(null, dispAll.map((d) => d.xs.length));
   let dataCount = 0;
@@ -1944,15 +1957,199 @@ function exportData() {
       if (i < d.xs.length) { cells.push(d.xs[i], d.ys[i]); dataCount++; }
       else cells.push('', '');
     }
-    rows.push(cells.join(','));
+    rows.push(cells);
   }
-  const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return { rows, valid, dataCount };
+}
+
+function downloadBlob(blob, filename) {
   const a = document.createElement('a');
   a.href = URL.createObjectURL(blob);
-  a.download = 'curve-data.csv';
+  a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
-  status('已导出 ' + valid.length + ' 条曲线,共 ' + dataCount + ' 行数据');
+}
+
+function exportData() {
+  const out = buildExportRows();
+  if (!out) return;
+  const rows = out.rows.map((r) => r.map(csvField).join(','));
+  const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  downloadBlob(blob, 'curve-data.csv');
+  status('已导出 CSV:' + out.valid.length + ' 条曲线,共 ' + out.dataCount + ' 行数据');
+}
+
+const CRC_TABLE = (() => {
+  const table = new Uint32Array(256);
+  for (let n = 0; n < 256; n++) {
+    let c = n;
+    for (let k = 0; k < 8; k++) c = c & 1 ? (c >>> 1) ^ 0xEDB88320 : c >>> 1;
+    table[n] = c >>> 0;
+  }
+  return table;
+})();
+
+function crc32(bytes) {
+  let c = 0xFFFFFFFF;
+  for (let i = 0; i < bytes.length; i++) c = CRC_TABLE[(c ^ bytes[i]) & 0xFF] ^ (c >>> 8);
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+
+function concatBytes(parts) {
+  let total = 0;
+  for (const part of parts) total += part.length;
+  const out = new Uint8Array(total);
+  let offset = 0;
+  for (const part of parts) { out.set(part, offset); offset += part.length; }
+  return out;
+}
+
+function zipStore(files) {
+  const chunks = [], central = [];
+  let offset = 0;
+  for (const file of files) {
+    const name = new TextEncoder().encode(file.name);
+    const data = typeof file.data === 'string' ? new TextEncoder().encode(file.data) : file.data;
+    const crc = crc32(data);
+    const local = new Uint8Array(30);
+    const lv = new DataView(local.buffer);
+    lv.setUint32(0, 0x04034B50, true);
+    lv.setUint16(4, 20, true);
+    lv.setUint16(6, 0x0800, true);
+    lv.setUint32(14, crc, true);
+    lv.setUint32(18, data.length, true);
+    lv.setUint32(22, data.length, true);
+    lv.setUint16(26, name.length, true);
+    chunks.push(local, name, data);
+
+    const header = new Uint8Array(46);
+    const cv = new DataView(header.buffer);
+    cv.setUint32(0, 0x02014B50, true);
+    cv.setUint16(4, 20, true);
+    cv.setUint16(6, 20, true);
+    cv.setUint16(8, 0x0800, true);
+    cv.setUint32(16, crc, true);
+    cv.setUint32(20, data.length, true);
+    cv.setUint32(24, data.length, true);
+    cv.setUint16(28, name.length, true);
+    cv.setUint32(42, offset, true);
+    central.push(header, name);
+    offset += 30 + name.length + data.length;
+  }
+  const centralBytes = concatBytes(central);
+  const end = new Uint8Array(22);
+  const ev = new DataView(end.buffer);
+  ev.setUint32(0, 0x06054B50, true);
+  ev.setUint16(8, files.length, true);
+  ev.setUint16(10, files.length, true);
+  ev.setUint32(12, centralBytes.length, true);
+  ev.setUint32(16, offset, true);
+  return concatBytes(chunks.concat([centralBytes, end]));
+}
+
+function xmlEsc(value) {
+  return String(value == null ? '' : value)
+    .replace(/[\u0000-\u0008\u000B\u000C\u000E-\u001F]/g, '')
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
+}
+
+function excelColumn(n) {
+  let out = '';
+  while (n > 0) {
+    n--;
+    out = String.fromCharCode(65 + n % 26) + out;
+    n = Math.floor(n / 26);
+  }
+  return out;
+}
+
+function worksheetXml(rows, noteSheet) {
+  const out = [
+    '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>',
+    '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">',
+    '<sheetViews><sheetView workbookViewId="0"/></sheetViews>'
+  ];
+  if (noteSheet) out.push('<cols><col min="1" max="1" width="100" customWidth="1"/></cols>');
+  out.push('<sheetData>');
+  rows.forEach((row, ri) => {
+    const cells = [];
+    row.forEach((value, ci) => {
+      if (value === '' || value == null) return;
+      const ref = excelColumn(ci + 1) + (ri + 1);
+      const forceText = noteSheet && ri === 0 && ci === 0;
+      const numeric = !forceText && isFinite(Number(value));
+      cells.push(numeric
+        ? '<c r="' + ref + '"><v>' + Number(value) + '</v></c>'
+        : '<c r="' + ref + '"' + (forceText ? ' s="1"' : '') + ' t="inlineStr"><is><t xml:space="preserve">' +
+          xmlEsc(value) + '</t></is></c>');
+    });
+    if (cells.length) {
+      const height = noteSheet && ri === 0 ? ' ht="120" customHeight="1"' : '';
+      out.push('<row r="' + (ri + 1) + '"' + height + '>' + cells.join('') + '</row>');
+    }
+  });
+  out.push('</sheetData></worksheet>');
+  return out.join('');
+}
+
+function makeXlsx(dataRows, note) {
+  const styles = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+    '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' +
+    '<fonts count="1"><font><sz val="11"/><name val="Calibri"/><family val="2"/></font></fonts>' +
+    '<fills count="2"><fill><patternFill patternType="none"/></fill><fill><patternFill patternType="gray125"/></fill></fills>' +
+    '<borders count="1"><border><left/><right/><top/><bottom/><diagonal/></border></borders>' +
+    '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' +
+    '<cellXfs count="2"><xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0"/>' +
+    '<xf numFmtId="0" fontId="0" fillId="0" borderId="0" xfId="0" applyAlignment="1"><alignment vertical="top" wrapText="1"/></xf></cellXfs>' +
+    '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles></styleSheet>';
+  return zipStore([
+    {
+      name: '[Content_Types].xml',
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' +
+        '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' +
+        '<Default Extension="xml" ContentType="application/xml"/>' +
+        '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' +
+        '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '<Override PartName="/xl/worksheets/sheet2.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' +
+        '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/></Types>'
+    },
+    {
+      name: '_rels/.rels',
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' +
+        '</Relationships>'
+    },
+    {
+      name: 'xl/workbook.xml',
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" ' +
+        'xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' +
+        '<sheets><sheet name="曲线数据" sheetId="1" r:id="rId1"/><sheet name="说明" sheetId="2" r:id="rId2"/></sheets></workbook>'
+    },
+    {
+      name: 'xl/_rels/workbook.xml.rels',
+      data: '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' +
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' +
+        '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' +
+        '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet2.xml"/>' +
+        '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' +
+        '</Relationships>'
+    },
+    { name: 'xl/styles.xml', data: styles },
+    { name: 'xl/worksheets/sheet1.xml', data: worksheetXml(dataRows, false) },
+    { name: 'xl/worksheets/sheet2.xml', data: worksheetXml([[note]], true) }
+  ]);
+}
+
+function exportExcel() {
+  const out = buildExportRows();
+  if (!out) return;
+  const bytes = makeXlsx(out.rows, $('explanationInput').value);
+  const type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
+  downloadBlob(new Blob([bytes], { type }), 'curve-data.xlsx');
+  status('已导出 Excel:曲线数据 + 说明,共 ' + out.dataCount + ' 行数据');
 }
 
 function parseCSV(text) {
@@ -2136,6 +2333,7 @@ function saveState() {
       settings: {
         title: $('titleInput').value, titleSize: $('titleSize').value, titleColor: $('titleColor').value, titleTheme: $('titleTheme').checked,
         xLabel: $('xLabelInput').value, yLabel: $('yLabelInput').value, axisFont: $('axisFontSel').value,
+        explanation: $('explanationInput').value,
         xLabelSize: $('xLabelSize').value, xLabelColor: $('xLabelColor').value, xLabelTheme: $('xLabelTheme').checked,
         yLabelSize: $('yLabelSize').value, yLabelColor: $('yLabelColor').value, yLabelTheme: $('yLabelTheme').checked,
         xScale: $('xScaleSel').value, yScale: $('yScaleSel').value,
@@ -2177,6 +2375,7 @@ function loadState() {
     const setChk = (id, v) => { const el = $(id); if (el) el.checked = !!v; };
     set('titleInput', s.title); set('titleSize', s.titleSize); set('titleColor', s.titleColor); setChk('titleTheme', s.titleTheme);
     set('xLabelInput', s.xLabel); set('yLabelInput', s.yLabel); set('axisFontSel', s.axisFont);
+    set('explanationInput', s.explanation);
     set('xLabelSize', s.xLabelSize); set('xLabelColor', s.xLabelColor); setChk('xLabelTheme', s.xLabelTheme);
     set('yLabelSize', s.yLabelSize); set('yLabelColor', s.yLabelColor); setChk('yLabelTheme', s.yLabelTheme);
     set('xScaleSel', s.xScale); set('yScaleSel', s.yScale);
