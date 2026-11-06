@@ -1982,6 +1982,12 @@ function parseCSV(text) {
   return rows;
 }
 
+function axisColumnName(label, axis) {
+  const s = String(label).trim();
+  const match = s.match(new RegExp('(?:^|\\s)' + axis + '(?=$|\\s|[（(])', 'i'));
+  return match ? s.slice(0, match.index).trim() : null;
+}
+
 function loadDataFromFile(file) {
   file.text().then((text) => {
     const rows = parseCSV(text);
@@ -1992,7 +1998,11 @@ function loadDataFromFile(file) {
       const a = String(r[0]).trim().toLowerCase();
       const b = String(r[1] || '').trim().toLowerCase();
       if ((a === '曲线' || a === 'curve') && b === 'x') { dataStart = i; break; }
-      if (a.endsWith(' x') && b.endsWith(' y')) { dataStart = i; wide = true; break; }
+      if (axisColumnName(r[0], 'x') !== null && axisColumnName(r[1], 'y') !== null) {
+        dataStart = i;
+        wide = true;
+        break;
+      }
     }
     if (dataStart < 0) {
       warn('CSV 格式不正确:未找到数据表头(旧格式 曲线,x,y 或宽表 X/Y 列)');
@@ -2018,9 +2028,10 @@ function loadDataFromFile(file) {
       const head = rows[dataStart];
       const names = [];
       for (let k = 0; k + 1 < head.length; k += 2) {
-        const nx = String(head[k]).trim();
-        if (!nx.toLowerCase().endsWith(' x')) break;
-        names.push(nx.slice(0, -2).trim());
+        const xName = axisColumnName(head[k], 'x');
+        const yName = axisColumnName(head[k + 1], 'y');
+        if (xName === null || yName === null) break;
+        names.push(xName);
       }
       for (let i = dataStart + 1; i < rows.length; i++) {
         const r = rows[i];
