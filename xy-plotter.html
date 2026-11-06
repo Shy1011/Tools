@@ -167,7 +167,7 @@ input:focus, select:focus, textarea:focus{
           <label class="f">说明文字（不显示在图中）
             <textarea id="explanationInput" rows="6" placeholder="输入实验条件、测量方法或结果说明…"></textarea>
           </label>
-          <div class="hint">仅保存在当前浏览器，不会显示在曲线图或 PNG 中。</div>
+          <div class="hint">会随 CSV 一起导出并自动恢复；不会显示在曲线图或 PNG 中。</div>
         </div>
       </details>
 
@@ -278,7 +278,7 @@ input:focus, select:focus, textarea:focus{
             · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点,隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
-            · 导出 CSV 为英文表头的宽表格式:每条曲线 X、Y 两列并排,可直接用 Excel 打开;旧版中文长格式 CSV 仍可载入<br>
+            · 导出 CSV 为英文表头的宽表格式:每条曲线 X、Y 两列并排,解释说明保存在独立元数据字段中;重新载入 CSV 时会自动恢复<br>
             · Log 坐标会自动跳过 0 和负数<br>
             · Log 坐标范围较小时会自动细分刻度并标注(如 0.1–0.7 会标出 0.1、0.2、…、0.7)
           </div>
@@ -1918,6 +1918,7 @@ function buildExportRows() {
   const valid = curves.filter((c) => c.xs.length);
   if (!valid.length) { warn('没有可导出的数据'); return null; }
   const rows = [
+    ['Explanation', $('explanationInput').value],
     ['Title', $('titleInput').value.trim()],
     ['X Axis', $('xLabelInput').value.trim()],
     ['Y Axis', $('yLabelInput').value.trim()],
@@ -2257,6 +2258,8 @@ function loadDataFromFile(file) {
     }
     if (!order.length) { warn('文件中没有有效数据行'); return; }
     const getMeta = (cn, en) => (meta[cn] !== undefined ? meta[cn] : meta[en]);
+    const explanation = getMeta('说明', 'Explanation');
+    $('explanationInput').value = explanation === undefined ? '' : explanation;
     const setMeta = (id, cn, en) => {
       const v = getMeta(cn, en);
       if (v !== undefined) { const el = $(id); if (el) el.value = v; }
