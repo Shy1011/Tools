@@ -33,9 +33,9 @@ Features:
 - Point picking: click a data point to add/remove a marker, mark multiple points at once with coordinates listed, one-click "Clear all markers"
 - Tick modes: auto pretty numbers (1/2/5×10ⁿ), N equal segments, fixed step, data point positions, custom tick list
 - Interaction: click the legend to show/hide curves, hover to show the curve name and exact coordinates, box-select zoom, hold Space or "Pan" to drag, double-click to reset the view
-- Data export / import: one-click CSV export (curve name, x, y — opens in Excel), and load same-format CSV / TXT to restore curves and notes
+- Data export / import: one-click CSV or Excel export; Excel keeps curve data and notes on separate sheets, while CSV / TXT can restore curves, column titles, and notes
 - Notes: enter plot-independent experiment notes in the sidebar; they are saved automatically and stored as a separate CSV metadata field
-- Auto-save: title, axis label text/font/size/color and positions, axis and tick settings, and curve data are all saved in the current browser and restored on refresh
+- Auto-save: title and axis label text/font/size/color and positions, curve-column titles, axis and tick settings, and curve data are all saved in the current browser and restored on refresh
 - PNG export; light / dark theme toggle; fully offline with no external dependencies
 
 ![Preview](xy-plotter-preview.png)
@@ -109,6 +109,22 @@ Features:
 
 ![Preview](calculator-preview.png)
 
+### 6. Decimal ↔ Hexadecimal Batch Converter (`dec-hex-converter.html`)
+
+Paste one number or a whole column, get both decimal and hexadecimal results, and shift the whole list left or right — useful for organising register addresses, configuration values, and exported data.
+
+Features:
+
+- Mix decimal values such as `1213` and `1098` with hex values such as `0x0123`, `0xFFA`, and `FFAh`
+- One value per line, or separate values with spaces / tabs; blank lines are ignored and invalid items are marked separately
+- Uses `BigInt` for exact conversion, including integers beyond 64 bits and negative values, with no JavaScript floating-point precision loss
+- Choose a left / right shift and 0–1024 bits for the whole list, with both shifted decimal and shifted hex columns
+- Copy the original or shifted DEC / HEX columns, or a four-column `DEC<Tab>HEX<Tab>SHIFT_DEC<Tab>SHIFT_HEX` result ready to paste into Excel
+- `HEX padding` can be smart, none, or at least 4 / 8 / 16 digits; input is saved locally in the browser
+- Automatic light / dark theme, two columns on desktop and one on mobile, with everything processed locally
+
+![Preview](dec-hex-converter-preview.png)
+
 ## Usage
 
 1. Clone or download this repository;
@@ -131,6 +147,8 @@ The home page is a full PWA: open <https://shy1011.github.io/Tools/> in Chrome /
 | --- | --- |
 | `bit-to-hex-x6.html` | 32-bit bit selector × 6 tool page |
 | `bit-to-hex-x6-preview.png` | Tool preview screenshot |
+| `dec-hex-converter.html` | Decimal / hexadecimal batch converter |
+| `dec-hex-converter-preview.png` | Tool preview screenshot |
 | `xy-plotter.html` | XY plotter · simple edition |
 | `xy-plotter-preview.png` | Tool preview screenshot |
 | `svg-to-pptx.html` | SVG → editable PowerPoint tool page |
@@ -146,6 +164,7 @@ The home page is a full PWA: open <https://shy1011.github.io/Tools/> in Chrome /
 
 - Pure vanilla HTML / CSS / JavaScript, zero third-party dependencies, works offline
 - The bit selector computes with 32-bit unsigned integers; when bit 31 is set, the `int32` column shows the two's-complement negative value; notes are saved in browser `localStorage`
+- The number converter uses exact `BigInt` arithmetic for conversion and shifting, with no fixed-width truncation; the page exposes `window.DHC.convert(text, options)` (`shiftDirection` / `shiftBits`) and a `?demo=1` sample entry point for automated tests
 - In the plotter, title / axis label positions and curve data are saved locally in the current browser; log axes automatically skip 0 and negative values
 - The SVG → PPT tool parses SVG with the browser DOM (so CSS / class / `style` rules and `transform` are resolved for free) and then writes the PPTX and ZIP packages directly from the DrawingML specification — hence no third-party library. The page also exposes `window.S2P.convert(...)` plus the `?qa=` / `?qaFile=` entry points used by the automated regression checks
 - The image → Markdown tool calls Google Gemini's `generativelanguage.googleapis.com/v1beta` endpoint directly from the browser with `fetch` (it sends permissive CORS headers, so a static page opened from `file://` can call it with no server), authenticating with the `x-goog-api-key` header and passing the image as base64 `inline_data`, with a `systemInstruction` pinning the output format. The page exposes `window.I2M.convert(dataUrl, {key, model, extra})` and `I2M.listModels(key)`, and supports `?demo=1` (loads a built-in sample image, no API call) and `?demo=1&auto=1` (runs one real recognition on the sample) for automated checks

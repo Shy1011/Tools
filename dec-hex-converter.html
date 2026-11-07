@@ -1,0 +1,707 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#2563eb">
+<meta name="application-name" content="Tools 工具集">
+<title>十进制 / 十六进制批量转换</title>
+<style>
+:root{
+  --bg:#f5f6f8; --card:#ffffff; --card-soft:#f9fafb; --text:#1b2430;
+  --muted:#697386; --border:#e2e6ec; --accent:#2563eb; --accent-soft:#dbeafe;
+  --on-accent:#ffffff; --danger:#dc2626; --danger-soft:#fef2f2; --success:#15803d;
+  --mono:"Cascadia Mono", Consolas, "Courier New", monospace;
+}
+@media (prefers-color-scheme: dark){
+  :root{
+    --bg:#0f1217; --card:#171c24; --card-soft:#12171e; --text:#e6e9ef;
+    --muted:#9aa5b5; --border:#2a323e; --accent:#3b82f6; --accent-soft:#1e2a44;
+    --on-accent:#ffffff; --danger:#f87171; --danger-soft:#2b1719; --success:#4ade80;
+  }
+}
+*{box-sizing:border-box}
+html{min-height:100%}
+body{
+  margin:0; min-height:100dvh; padding:26px 20px 36px;
+  background:
+    radial-gradient(circle at 8% 0%, color-mix(in srgb, var(--accent) 10%, transparent), transparent 26rem),
+    var(--bg);
+  color:var(--text);
+  font-family:system-ui,-apple-system,"Segoe UI",Roboto,"Microsoft YaHei",sans-serif;
+  line-height:1.5;
+}
+button,textarea,select{font:inherit}
+a{color:inherit}
+.shell{width:min(1400px,100%); margin:0 auto}
+.topbar{display:flex; align-items:center; justify-content:space-between; gap:16px; margin-bottom:22px}
+.back{
+  display:inline-flex; align-items:center; gap:7px; text-decoration:none;
+  color:var(--muted); font-size:13px;
+}
+.back:hover{color:var(--accent)}
+.privacy{
+  display:inline-flex; align-items:center; gap:7px; color:var(--muted);
+  font-size:12px;
+}
+.privacy::before{
+  content:""; width:7px; height:7px; border-radius:50%;
+  background:var(--success); box-shadow:0 0 0 4px color-mix(in srgb, var(--success) 14%, transparent);
+}
+.hero{margin-bottom:22px}
+h1{font-size:clamp(25px,4vw,38px); line-height:1.15; margin:0 0 9px; letter-spacing:-.025em}
+.sub{max-width:760px; margin:0; color:var(--muted); font-size:14px}
+.workspace{display:grid; grid-template-columns:minmax(290px,.72fr) minmax(0,1.55fr); gap:18px; align-items:start}
+.panel{
+  background:var(--card); border:1px solid var(--border); border-radius:16px;
+  box-shadow:0 12px 40px rgb(15 23 42 / .045);
+}
+.input-panel{padding:18px}
+.output-panel{min-width:0; overflow:hidden}
+.panel-head{display:flex; align-items:flex-start; justify-content:space-between; gap:14px; margin-bottom:12px}
+.panel-title{font-size:15px; font-weight:700; margin:0}
+.panel-hint{font-size:12px; color:var(--muted); margin:3px 0 0}
+.counter{
+  flex:none; border-radius:999px; padding:4px 9px; font-size:11px; font-variant-numeric:tabular-nums;
+  color:var(--accent); background:var(--accent-soft); border:1px solid color-mix(in srgb, var(--accent) 24%, transparent);
+}
+textarea{
+  display:block; width:100%; min-height:315px; resize:vertical; padding:14px 15px;
+  border:1px solid var(--border); border-radius:11px; outline:none;
+  background:var(--card-soft); color:var(--text); caret-color:var(--accent);
+  font-family:var(--mono); font-size:16px; line-height:1.7;
+  transition:border-color .15s, box-shadow .15s;
+}
+textarea:focus,select:focus,input:focus{
+  border-color:var(--accent); box-shadow:0 0 0 3px color-mix(in srgb, var(--accent) 18%, transparent);
+}
+textarea::placeholder{color:color-mix(in srgb, var(--muted) 76%, transparent)}
+.toolbar{display:flex; flex-wrap:wrap; gap:8px; margin-top:12px}
+.settings{
+  display:grid; grid-template-columns:1fr auto; align-items:center; gap:12px;
+  margin-top:14px; padding-top:14px; border-top:1px solid var(--border);
+}
+.settings label{display:flex; align-items:center; gap:9px; color:var(--muted); font-size:12px}
+.shift-setting{
+  grid-column:1/-1; display:flex; align-items:center; flex-wrap:wrap; gap:8px;
+  padding:9px 10px; border:1px solid var(--border); border-radius:9px;
+  background:var(--card-soft);
+}
+.shift-label{color:var(--muted); font-size:12px; font-weight:650}
+.shift-preview{
+  margin-left:auto; color:var(--accent); font:650 12px/1.2 var(--mono);
+  white-space:nowrap;
+}
+.shift-bits{margin-left:2px}
+.shift-bits input{
+  width:68px; margin-right:-4px; padding:6px 8px; border:1px solid var(--border);
+  border-radius:8px; background:var(--card); color:var(--text); outline:none;
+  font-family:var(--mono); text-align:right;
+}
+select{
+  border:1px solid var(--border); border-radius:8px; background:var(--card-soft);
+  color:var(--text); padding:6px 28px 6px 9px; outline:none; cursor:pointer;
+}
+.btn{
+  appearance:none; border:1px solid var(--border); border-radius:8px; padding:7px 11px;
+  background:var(--card); color:var(--text); cursor:pointer; font-size:12px;
+  transition:border-color .15s, background .15s, color .15s, transform .1s;
+}
+.btn:hover{border-color:var(--accent); color:var(--accent)}
+.btn:active{transform:translateY(1px)}
+.btn:disabled{opacity:.42; cursor:not-allowed; transform:none}
+.btn.primary{
+  border-color:var(--accent); background:var(--accent); color:var(--on-accent);
+}
+.btn.primary:hover{background:color-mix(in srgb, var(--accent) 88%, #000); color:var(--on-accent)}
+.btn.quiet{background:transparent; color:var(--muted)}
+.status{
+  min-height:20px; margin-top:10px; color:var(--muted); font-size:12px;
+}
+.status.success{color:var(--success)}
+.status.error{color:var(--danger)}
+.output-head{
+  display:flex; align-items:center; justify-content:space-between; gap:12px;
+  padding:16px 18px; border-bottom:1px solid var(--border);
+}
+.output-title-wrap{min-width:0}
+.copy-actions{display:flex; flex-wrap:wrap; justify-content:flex-end; gap:7px}
+.table-wrap{max-height:600px; overflow:auto; overscroll-behavior:contain}
+table{width:100%; border-collapse:separate; border-spacing:0; font-size:13px}
+thead{position:sticky; top:0; z-index:2}
+th{
+  background:var(--card-soft); color:var(--muted); font-size:11px; font-weight:650;
+  text-align:left; padding:9px 12px; border-bottom:1px solid var(--border); white-space:nowrap;
+}
+td{
+  padding:10px 12px; border-bottom:1px solid color-mix(in srgb, var(--border) 72%, transparent);
+  vertical-align:middle;
+}
+tbody tr:last-child td{border-bottom:0}
+tbody tr:hover td{background:color-mix(in srgb, var(--accent) 4%, var(--card))}
+.idx{width:38px; color:var(--muted); text-align:right; font-variant-numeric:tabular-nums}
+.source{color:var(--muted); max-width:7.5rem; overflow:hidden; text-overflow:ellipsis; white-space:nowrap}
+.number{
+  display:flex; align-items:center; gap:6px; min-width:9rem;
+  font-family:var(--mono); font-size:12.5px; font-weight:650;
+  font-variant-numeric:tabular-nums; white-space:nowrap;
+}
+.number span{overflow:hidden; text-overflow:ellipsis}
+.shift-number span{color:var(--accent)}
+.shift-head{color:var(--accent)!important}
+.mini-copy{
+  flex:none; width:25px; height:25px; padding:0; border-radius:6px;
+  border:1px solid transparent; background:transparent; color:var(--muted);
+  cursor:pointer; font-size:13px; line-height:1;
+}
+.mini-copy:hover{border-color:var(--border); background:var(--card-soft); color:var(--accent)}
+.error-row td{background:var(--danger-soft)}
+.error-row .source{color:var(--danger); max-width:none}
+.error-message{color:var(--danger); font-size:12px}
+.empty{padding:60px 20px; text-align:center; color:var(--muted)}
+.empty-icon{
+  display:grid; place-items:center; width:46px; height:46px; margin:0 auto 12px;
+  border-radius:13px; background:var(--accent-soft); color:var(--accent);
+  font:700 20px/1 var(--mono);
+}
+.empty strong{display:block; color:var(--text); font-size:14px; margin-bottom:4px}
+.empty p{margin:0; font-size:12px}
+.render-note{
+  display:none; padding:11px 18px; border-top:1px solid var(--border);
+  background:var(--card-soft); color:var(--muted); font-size:12px;
+}
+.sr-only{
+  position:absolute; width:1px; height:1px; padding:0; margin:-1px;
+  overflow:hidden; clip:rect(0,0,0,0); white-space:nowrap; border:0;
+}
+@media (max-width:1280px){
+  body{padding:20px 14px 30px}
+  .workspace{grid-template-columns:1fr}
+  textarea{min-height:220px}
+  .output-panel{min-height:300px}
+}
+@media (max-width:520px){
+  .privacy{display:none}
+  .input-panel,.output-head{padding:14px}
+  .output-head{align-items:flex-start; flex-direction:column}
+  .copy-actions{justify-content:flex-start}
+  .settings{grid-template-columns:1fr; align-items:flex-start}
+  .settings > .btn{justify-self:start}
+  .shift-setting{align-items:flex-start}
+  .shift-preview{margin-left:0; flex-basis:100%}
+  .source{display:none}
+  .number{min-width:13rem}
+  th,tbody td{padding-left:9px; padding-right:9px}
+}
+@media (prefers-reduced-motion:reduce){
+  *{scroll-behavior:auto!important; transition:none!important}
+}
+</style>
+</head>
+<body>
+<div class="shell">
+  <div class="topbar">
+    <a class="back" href="index.html" aria-label="返回工具首页">← 返回工具集</a>
+    <span class="privacy">纯本地转换，不上传数据</span>
+  </div>
+
+  <header class="hero">
+    <h1>十进制 ↔ 十六进制</h1>
+    <p class="sub">粘贴一个数字或一整列数字，自动补全十进制与十六进制，并可直接按位左移或右移，同时给出移位后的十进制和十六进制。支持 <code>1213</code>、<code>1098</code>、<code>0x0123</code>、<code>0xFFA</code> 混用，结果可整列复制到表格。</p>
+  </header>
+
+  <main class="workspace">
+    <section class="panel input-panel" aria-labelledby="inputTitle">
+      <div class="panel-head">
+        <div>
+          <h2 class="panel-title" id="inputTitle">输入数字</h2>
+          <p class="panel-hint">每行一个，也支持空格或 Tab 分隔</p>
+        </div>
+        <span class="counter" id="inputCount">0 项</span>
+      </div>
+
+      <label class="sr-only" for="source">待转换的数字</label>
+      <textarea id="source" rows="12" spellcheck="false" autocomplete="off"
+        placeholder="1213&#10;1098&#10;0x0123&#10;0xFFA"></textarea>
+
+      <div class="toolbar">
+        <button class="btn" type="button" id="demoDec">十进制示例</button>
+        <button class="btn" type="button" id="demoHex">十六进制示例</button>
+        <button class="btn quiet" type="button" id="clear">清空</button>
+      </div>
+
+      <div class="settings">
+        <label for="hexPad">
+          HEX 补零
+          <select id="hexPad">
+            <option value="auto">智能</option>
+            <option value="none">不补零</option>
+            <option value="4">至少 4 位</option>
+            <option value="8">至少 8 位</option>
+            <option value="16">至少 16 位</option>
+          </select>
+        </label>
+        <button class="btn primary" type="button" id="convert">立即转换</button>
+        <div class="shift-setting">
+          <span class="shift-label">十进制移位</span>
+          <label class="sr-only" for="shiftDirection">移位方向</label>
+          <select id="shiftDirection">
+            <option value="left">左移</option>
+            <option value="right">右移</option>
+          </select>
+          <label class="shift-bits" for="shiftBits">
+            <input id="shiftBits" type="number" min="0" max="1024" step="1" value="1" inputmode="numeric" aria-label="移位位数">
+            位
+          </label>
+          <span class="shift-preview" id="shiftPreview">DEC &lt;&lt; 1</span>
+        </div>
+      </div>
+
+      <div class="status" id="status" role="status" aria-live="polite">等待输入数字…</div>
+    </section>
+
+    <section class="panel output-panel" aria-labelledby="outputTitle">
+      <div class="output-head">
+        <div class="output-title-wrap">
+          <h2 class="panel-title" id="outputTitle">转换结果</h2>
+          <p class="panel-hint" id="resultSummary">DEC、HEX 与移位结果将同步显示</p>
+        </div>
+        <div class="copy-actions" aria-label="复制结果">
+          <button class="btn" type="button" id="copyDec" disabled>复制 DEC</button>
+          <button class="btn" type="button" id="copyHex" disabled>复制 HEX</button>
+          <button class="btn" type="button" id="copyShift" disabled>复制移位 DEC</button>
+          <button class="btn" type="button" id="copyShiftHex" disabled>复制移位 HEX</button>
+          <button class="btn primary" type="button" id="copyAll" disabled>复制全部</button>
+        </div>
+      </div>
+
+      <div id="results" class="table-wrap">
+        <div class="empty">
+          <div class="empty-icon">0x</div>
+          <strong>粘贴后即时显示</strong>
+          <p>输入十进制或十六进制，另一项及移位后的 DEC / HEX 会自动补全。</p>
+        </div>
+      </div>
+      <div class="render-note" id="renderNote"></div>
+    </section>
+  </main>
+</div>
+
+<noscript><p style="text-align:center">此工具需要启用 JavaScript。</p></noscript>
+
+<script>
+(function () {
+  "use strict";
+
+  var MAX_RENDER_ROWS = 3000;
+  var source = document.getElementById("source");
+  var hexPad = document.getElementById("hexPad");
+  var statusEl = document.getElementById("status");
+  var inputCount = document.getElementById("inputCount");
+  var resultSummary = document.getElementById("resultSummary");
+  var resultsEl = document.getElementById("results");
+  var renderNote = document.getElementById("renderNote");
+  var copyDec = document.getElementById("copyDec");
+  var copyHex = document.getElementById("copyHex");
+  var copyShift = document.getElementById("copyShift");
+  var copyShiftHex = document.getElementById("copyShiftHex");
+  var copyAll = document.getElementById("copyAll");
+  var shiftDirection = document.getElementById("shiftDirection");
+  var shiftBits = document.getElementById("shiftBits");
+  var shiftPreview = document.getElementById("shiftPreview");
+  var current = [];
+  var validRows = [];
+  var activeShift = { direction: "left", bits: 1 };
+  var inputTimer = 0;
+
+  function splitTokens(text) {
+    var tokens = [];
+    text.split(/\r?\n/).forEach(function (line) {
+      var trimmed = line.trim();
+      if (!trimmed) return;
+      var parts = trimmed.split(/\s+/);
+      for (var i = 0; i < parts.length; i++) {
+        if (parts[i]) tokens.push(parts[i]);
+      }
+    });
+    return tokens;
+  }
+
+  function parseValue(original) {
+    var token = original.trim();
+    if (!token) return { ok: true, blank: true };
+
+    if (/^[+-]?\d{1,3}(,\d{3})+$/.test(token)) {
+      token = token.replace(/,/g, "");
+    }
+    token = token.replace(/_/g, "");
+
+    var sign = 1;
+    var body = token;
+    if (/^[+-]/.test(body)) {
+      sign = body.charAt(0) === "-" ? -1 : 1;
+      body = body.slice(1);
+    }
+
+    var radix = 10;
+    var hexDigits = 0;
+    var digits = body;
+    var match;
+
+    if ((match = body.match(/^0[xX]([0-9a-fA-F]+)$/))) {
+      radix = 16;
+      digits = match[1];
+      hexDigits = digits.length;
+    } else if ((match = body.match(/^([0-9a-fA-F]+)[hH]$/))) {
+      radix = 16;
+      digits = match[1];
+      hexDigits = digits.length;
+    } else if (/^[0-9]+$/.test(body)) {
+      radix = 10;
+      digits = body;
+    } else if (/^[0-9a-fA-F]*[a-fA-F][0-9a-fA-F]*$/.test(body)) {
+      radix = 16;
+      digits = body;
+      hexDigits = body.length;
+    } else {
+      return { ok: false, error: "无法识别这个数字" };
+    }
+
+    if (!digits) return { ok: false, error: "数字内容为空" };
+
+    var magnitude;
+    try {
+      magnitude = radix === 16 ? BigInt("0x" + digits) : BigInt(digits);
+    } catch (err) {
+      return { ok: false, error: "数字格式无效" };
+    }
+
+    if (magnitude === 0n) sign = 1;
+    return {
+      ok: true,
+      value: sign < 0 ? -magnitude : magnitude,
+      radix: radix,
+      hexDigits: hexDigits,
+      original: original
+    };
+  }
+
+  function hexText(value, sourceHexDigits, mode) {
+    var negative = value < 0n;
+    var digits = (negative ? -value : value).toString(16).toUpperCase();
+    var width = mode === "auto"
+      ? sourceHexDigits
+      : (mode === "none" ? 0 : parseInt(mode, 10));
+    if (width > digits.length) digits = digits.padStart(width, "0");
+    return (negative ? "-0x" : "0x") + digits;
+  }
+
+  function normalizeShift(options) {
+    var direction = options && options.direction === "right" ? "right" : "left";
+    var bits = options && Number.isFinite(Number(options.bits))
+      ? Math.floor(Number(options.bits))
+      : 0;
+    bits = Math.max(0, Math.min(1024, bits));
+    return { direction: direction, bits: bits };
+  }
+
+  function shiftValue(value, shift) {
+    var bits = BigInt(shift.bits);
+    return shift.direction === "right" ? value >> bits : value << bits;
+  }
+
+  function convertText(text, mode, shiftOptions) {
+    var shift = normalizeShift(shiftOptions);
+    var tokens = splitTokens(text);
+    var rows = tokens.map(function (token, index) {
+      var parsed = parseValue(token);
+      if (!parsed.ok) {
+        return { index: index + 1, original: token, ok: false, error: parsed.error };
+      }
+      var shiftedValue = shiftValue(parsed.value, shift);
+      return {
+        index: index + 1,
+        original: token,
+        ok: true,
+        dec: parsed.value.toString(10),
+        hex: hexText(parsed.value, parsed.hexDigits, mode),
+        shifted: shiftedValue.toString(10),
+        shiftedHex: hexText(shiftedValue, parsed.hexDigits, mode),
+        radix: parsed.radix
+      };
+    });
+    return {
+      rows: rows,
+      valid: rows.filter(function (row) { return row.ok; }),
+      invalid: rows.filter(function (row) { return !row.ok; })
+    };
+  }
+
+  function makeCell(className, text) {
+    var cell = document.createElement("td");
+    if (className) cell.className = className;
+    cell.textContent = text;
+    return cell;
+  }
+
+  function makeNumberCell(text, extraClass) {
+    var cell = document.createElement("td");
+    var wrap = document.createElement("div");
+    wrap.className = "number";
+    if (extraClass) wrap.classList.add(extraClass);
+    var value = document.createElement("span");
+    value.textContent = text;
+    var copy = document.createElement("button");
+    copy.type = "button";
+    copy.className = "mini-copy";
+    copy.textContent = "⧉";
+    copy.title = "复制 " + text;
+    copy.setAttribute("aria-label", "复制 " + text);
+    copy.addEventListener("click", function () {
+      copyText(text).then(function (saved) {
+        if (!saved) return;
+        var old = copy.textContent;
+        copy.textContent = "✓";
+        setTimeout(function () { copy.textContent = old; }, 850);
+      });
+    });
+    wrap.append(value, copy);
+    cell.append(wrap);
+    return cell;
+  }
+
+  function renderTable() {
+    if (!current.length) {
+      resultsEl.innerHTML =
+        '<div class="empty">' +
+          '<div class="empty-icon">0x</div>' +
+          '<strong>粘贴后即时显示</strong>' +
+          '<p>输入十进制或十六进制，另一项和移位结果会自动补全。</p>' +
+        '</div>';
+      renderNote.style.display = "none";
+      return;
+    }
+
+    var table = document.createElement("table");
+    var thead = document.createElement("thead");
+    var headRow = document.createElement("tr");
+    var shiftName = (activeShift.direction === "left" ? "左移 " : "右移 ") + activeShift.bits + " 位";
+    ["#", "输入", "十进制 / DEC", "十六进制 / HEX", shiftName + " / DEC", shiftName + " / HEX"].forEach(function (label, index) {
+      var th = document.createElement("th");
+      th.textContent = label;
+      if (index >= 4) th.className = "shift-head";
+      headRow.append(th);
+    });
+    thead.append(headRow);
+
+    var tbody = document.createElement("tbody");
+    var shown = current.slice(0, MAX_RENDER_ROWS);
+    shown.forEach(function (row) {
+      var tr = document.createElement("tr");
+      if (!row.ok) tr.className = "error-row";
+      var index = makeCell("idx", String(row.index));
+      var original = makeCell("source", row.original);
+      original.title = row.original;
+      tr.append(index, original);
+
+      if (row.ok) {
+        tr.append(
+          makeNumberCell(row.dec),
+          makeNumberCell(row.hex),
+          makeNumberCell(row.shifted, "shift-number"),
+          makeNumberCell(row.shiftedHex, "shift-number")
+        );
+      } else {
+        var error = makeCell("error-message", row.error);
+        error.colSpan = 4;
+        tr.append(error);
+      }
+      tbody.append(tr);
+    });
+
+    table.append(thead, tbody);
+    resultsEl.replaceChildren(table);
+
+    if (current.length > MAX_RENDER_ROWS) {
+      renderNote.style.display = "block";
+      renderNote.textContent = "为保证页面流畅，仅显示前 " + MAX_RENDER_ROWS + " 项；复制操作仍包含全部结果。";
+    } else {
+      renderNote.style.display = "none";
+    }
+  }
+
+  function updateStatus(converted) {
+    var total = converted.rows.length;
+    var valid = converted.valid.length;
+    var invalid = converted.invalid.length;
+    inputCount.textContent = total + " 项";
+
+    if (!total) {
+      statusEl.className = "status";
+      statusEl.textContent = "等待输入数字…";
+      resultSummary.textContent = "DEC、HEX 与移位结果将同步显示";
+      return;
+    }
+
+    var shiftLabel = (activeShift.direction === "left" ? "左移 " : "右移 ") + activeShift.bits + " 位";
+    if (invalid) {
+      statusEl.className = "status error";
+      statusEl.textContent = "已转换 " + valid + " 项，" + invalid + " 项无法识别";
+      resultSummary.textContent = shiftLabel + " · 共 " + total + " 项 · " + valid + " 项成功";
+    } else {
+      statusEl.className = "status success";
+      statusEl.textContent = "转换完成，共 " + valid + " 项";
+      resultSummary.textContent = shiftLabel + " · 共 " + total + " 项 · 全部转换成功";
+    }
+  }
+
+  function convert() {
+    activeShift = normalizeShift({ direction: shiftDirection.value, bits: shiftBits.value });
+    shiftPreview.textContent = "DEC " + (activeShift.direction === "left" ? "<<" : ">>") + " " + activeShift.bits;
+    var converted = convertText(source.value, hexPad.value, activeShift);
+    current = converted.rows;
+    validRows = converted.valid;
+    updateStatus(converted);
+    renderTable();
+    var hasRows = validRows.length > 0;
+    copyDec.disabled = !hasRows;
+    copyHex.disabled = !hasRows;
+    copyShift.disabled = !hasRows;
+    copyShiftHex.disabled = !hasRows;
+    copyAll.disabled = !hasRows;
+  }
+
+  function copyText(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text).then(function () { return true; }).catch(function () {
+        return legacyCopy(text);
+      });
+    }
+    return Promise.resolve(legacyCopy(text));
+  }
+
+  function legacyCopy(text) {
+    var area = document.createElement("textarea");
+    area.value = text;
+    area.style.position = "fixed";
+    area.style.opacity = "0";
+    document.body.append(area);
+    area.select();
+    var ok = false;
+    try { ok = document.execCommand("copy"); } catch (err) {}
+    area.remove();
+    return ok;
+  }
+
+  function flashButton(button, label) {
+    var old = button.textContent;
+    button.textContent = label;
+    setTimeout(function () { button.textContent = old; }, 1100);
+  }
+
+  function copyColumn(kind, button) {
+    if (!validRows.length) return;
+    var text;
+    if (kind === "dec") {
+      text = validRows.map(function (row) { return row.dec; }).join("\n");
+    } else if (kind === "hex") {
+      text = validRows.map(function (row) { return row.hex; }).join("\n");
+    } else if (kind === "shift") {
+      text = validRows.map(function (row) { return row.shifted; }).join("\n");
+    } else if (kind === "shiftHex") {
+      text = validRows.map(function (row) { return row.shiftedHex; }).join("\n");
+    } else {
+      text = validRows.map(function (row) {
+        return row.dec + "\t" + row.hex + "\t" + row.shifted + "\t" + row.shiftedHex;
+      }).join("\n");
+    }
+    copyText(text).then(function (ok) {
+      flashButton(button, ok ? "已复制" : "复制失败");
+    });
+  }
+
+  function setDemo(kind) {
+    source.value = kind === "dec"
+      ? "1213\n1098\n291\n4090"
+      : "0x0123\n0xFFA\n0x04BD\n0x0FFA";
+    convert();
+    source.focus();
+    source.setSelectionRange(source.value.length, source.value.length);
+  }
+
+  source.addEventListener("input", function () {
+    window.clearTimeout(inputTimer);
+    inputTimer = window.setTimeout(function () {
+      convert();
+      try { localStorage.setItem("dec-hex-converter-input", source.value); } catch (err) {}
+    }, 70);
+  });
+  source.addEventListener("keydown", function (event) {
+    if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {
+      event.preventDefault();
+      convert();
+    }
+  });
+  hexPad.addEventListener("change", convert);
+  function shiftChanged() {
+    convert();
+    try {
+      localStorage.setItem("dec-hex-converter-shift-direction", shiftDirection.value);
+      localStorage.setItem("dec-hex-converter-shift-bits", shiftBits.value);
+    } catch (err) {}
+  }
+  shiftDirection.addEventListener("change", shiftChanged);
+  shiftBits.addEventListener("input", shiftChanged);
+  shiftBits.addEventListener("change", shiftChanged);
+  document.getElementById("convert").addEventListener("click", convert);
+  document.getElementById("demoDec").addEventListener("click", function () { setDemo("dec"); });
+  document.getElementById("demoHex").addEventListener("click", function () { setDemo("hex"); });
+  document.getElementById("clear").addEventListener("click", function () {
+    source.value = "";
+    convert();
+    source.focus();
+    try { localStorage.removeItem("dec-hex-converter-input"); } catch (err) {}
+  });
+  copyDec.addEventListener("click", function () { copyColumn("dec", copyDec); });
+  copyHex.addEventListener("click", function () { copyColumn("hex", copyHex); });
+  copyShift.addEventListener("click", function () { copyColumn("shift", copyShift); });
+  copyShiftHex.addEventListener("click", function () { copyColumn("shiftHex", copyShiftHex); });
+  copyAll.addEventListener("click", function () { copyColumn("all", copyAll); });
+
+  try {
+    var saved = localStorage.getItem("dec-hex-converter-input");
+    if (saved !== null) source.value = saved;
+    var savedDirection = localStorage.getItem("dec-hex-converter-shift-direction");
+    var savedBits = localStorage.getItem("dec-hex-converter-shift-bits");
+    if (savedDirection === "left" || savedDirection === "right") shiftDirection.value = savedDirection;
+    if (savedBits !== null && /^\d+$/.test(savedBits)) shiftBits.value = savedBits;
+  } catch (err) {}
+
+  window.DHC = {
+    convert: function (text, options) {
+      return convertText(
+        String(text || ""),
+        (options && options.hexPad) || "auto",
+        {
+          direction: options && options.shiftDirection,
+          bits: options && options.shiftBits
+        }
+      );
+    }
+  };
+
+  var params = new URLSearchParams(location.search);
+  if (params.get("demo") === "1") {
+    source.value = "1213\n1098\n0x0123\n0xFFA\n0xFFFFFFFFFFFFFFFF\n-10";
+  }
+  if (params.get("shift") === "left" || params.get("shift") === "right") {
+    shiftDirection.value = params.get("shift");
+  }
+  if (/^\d+$/.test(params.get("bits") || "")) {
+    shiftBits.value = params.get("bits");
+  }
+  convert();
+})();
+</script>
+</body>
+</html>

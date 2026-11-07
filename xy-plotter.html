@@ -81,6 +81,8 @@ input:focus, select:focus, textarea:focus{
 .curve-head{display:flex; align-items:center; gap:6px; flex-wrap:wrap}
 .curve-head .curve-name{flex:1; min-width:80px; font-size:12px}
 .curve-head input[type=color]{width:30px; height:22px; padding:1px; border-radius:5px; cursor:pointer}
+.curve-coltitle{flex:1; min-width:100px}
+.curve-coltitle input{width:100%; padding:2px 5px; font-size:11px}
 .curve-sec textarea{min-height:64px; font-size:11px}
 .curve-wlabel{flex:none; width:58px; gap:2px}
 .curve-wlabel input{width:100%; padding:2px 5px}
@@ -90,6 +92,13 @@ input:focus, select:focus, textarea:focus{
 }
 .btn-sm:hover{border-color:var(--danger); color:var(--danger)}
 .hint{font-size:11px; color:var(--muted); line-height:1.5}
+.method-box{
+  padding:8px; border:1px dashed var(--border); border-radius:6px;
+  background:color-mix(in srgb, var(--text) 3%, transparent);
+  font-size:11px; line-height:1.65; color:var(--muted);
+}
+.method-box b{color:var(--text)}
+.method-formula{font-family:var(--mono); color:var(--text)}
 .info-line{font-size:12px; color:var(--muted); font-family:var(--mono)}
 @media (max-width:820px){
   .main{flex-direction:column}
@@ -105,6 +114,7 @@ input:focus, select:focus, textarea:focus{
     <button id="clearBtn" class="btn" type="button">清空</button>
     <button id="pngBtn" class="btn" type="button">导出 PNG</button>
     <button id="exportDataBtn" class="btn" type="button">导出 CSV</button>
+    <button id="exportExcelBtn" class="btn" type="button">导出 Excel</button>
     <button id="loadDataBtn" class="btn" type="button">载入数据…</button>
     <input id="dataFileInput" type="file" accept=".csv,.txt" hidden>
     <button id="panBtn" class="btn" type="button">平移</button>
@@ -153,7 +163,7 @@ input:focus, select:focus, textarea:focus{
         <div class="sec-body">
           <div id="curvesBox"></div>
           <button id="addCurveBtn" class="btn" type="button">+ 新增曲线</button>
-          <div class="hint">每条曲线有自己的 X / Y 输入框和颜色;X 留空时自动用 0, 1, 2, …;数量不一致时按较少的一侧绘制。</div>
+          <div class="hint">每条曲线有自己的 X / Y 输入框、列名和颜色;列名默认为 X / Y,会作为 CSV 表头的一部分随文件导出和导入;X 留空时自动用 0, 1, 2, …;数量不一致时按较少的一侧绘制。</div>
           <div class="info-line" id="info">尚未绘图</div>
           <div class="info-line" id="selInfo">点击数据点可添加标记</div>
           <div class="row"><button id="clearSelBtn" class="btn-sm" type="button">清除全部标记</button></div>
@@ -167,7 +177,7 @@ input:focus, select:focus, textarea:focus{
           <label class="f">说明文字（不显示在图中）
             <textarea id="explanationInput" rows="6" placeholder="输入实验条件、测量方法或结果说明…"></textarea>
           </label>
-          <div class="hint">会随 CSV 一起导出并自动恢复；不会显示在曲线图或 PNG 中。</div>
+          <div class="hint">会随 CSV 一起导出并自动恢复;导出 Excel 时写入独立的「说明」Sheet;不会显示在曲线图或 PNG 中。</div>
         </div>
       </details>
 
@@ -189,6 +199,13 @@ input:focus, select:focus, textarea:focus{
             <button id="cleanUndoBtn" class="btn" type="button">撤销</button>
             <button id="cleanRedoBtn" class="btn" type="button">重做</button>
             <button id="cleanRestoreBtn" class="btn" type="button">恢复隐藏点</button>
+          </div>
+          <div class="method-box">
+            <b>处理方法</b><br>
+            · 毛刺清理(中值滤波):<span class="method-formula">y′[i] = median(y[i-k] … y[i+k])</span>,窗口 N 取 3–21 的奇数,k=(N−1)/2;首尾用镜像点补齐。<br>
+            · 叠加滑动平均:<span class="method-formula">y″[i] = (y′[i-k] + … + y′[i+k]) / m</span>,m 是窗口内实际参与平均的点数;首尾只平均实际存在的点。<br>
+            · 处理顺序:隐藏点/补线 → 中值滤波 → 滑动平均 → 绘图。X 值不变,也不做降采样。<br>
+            · “平滑曲线”只改变连线外观;滑动平均会改变显示层 Y 值。原始 CSV 不变,勾选“导出处理结果”后 CSV 才使用处理值。
           </div>
           <div class="hint">处理只影响显示,原始数据(文本框、默认导出 CSV)保持不变;取消勾选即可对比原始曲线。橡皮擦改为「隐藏」数据点,隐藏段自动用平滑曲线补上(可关闭「擦除后平滑补线」),可撤销/重做。勾选「导出处理结果」后,导出 CSV 与图像完全一致(含补线点)。</div>
         </div>
@@ -278,7 +295,7 @@ input:focus, select:focus, textarea:focus{
             · 工具栏「橡皮擦」:开启后拖动框选或单击可隐藏数据点,隐藏段自动用平滑曲线补上,原始数据不变,可撤销/重做<br>
             · 刻度方式:自动漂亮数 / 等分 / 固定步长 / 数据点 / 自定义<br>
             · 标题、标签样式、曲线数据都会自动保存在本浏览器,刷新不丢失<br>
-            · 导出 CSV 为英文表头的宽表格式:每条曲线 X、Y 两列并排,解释说明保存在独立元数据字段中;重新载入 CSV 时会自动恢复<br>
+            · 导出 CSV 为英文表头的宽表格式;导出 Excel 时曲线数据写入「曲线数据」Sheet,解释说明写入独立的「说明」Sheet<br>
             · Log 坐标会自动跳过 0 和负数<br>
             · Log 坐标范围较小时会自动细分刻度并标注(如 0.1–0.7 会标出 0.1、0.2、…、0.7)
           </div>
@@ -304,7 +321,7 @@ const THEMES = {
   dark:  { bg:'#11161d', grid:'#2a323e', minor:'#1f2731', axis:'#9aa5b5', text:'#e6e9ef', title:'#f3f4f6', frame:'#3a4350' }
 };
 
-let curves = [];          // [{id,name,color,visible,xs,ys}]
+let curves = [];          // [{id,name,color,visible,width,xColumnTitle,yColumnTitle,xs,ys}]
 let curveSeq = 0;
 const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0ea5e9', '#db2777', '#65a30d'];
 const curvesBox = $('curvesBox');
@@ -1543,6 +1560,7 @@ $('pngBtn').addEventListener('click', () => {
   }, 'image/png');
 });
 $('exportDataBtn').addEventListener('click', exportData);
+$('exportExcelBtn').addEventListener('click', exportExcel);
 $('explanationInput').addEventListener('input', scheduleSave);
 $('loadDataBtn').addEventListener('click', () => $('dataFileInput').click());
 $('dataFileInput').addEventListener('change', () => {
@@ -1642,10 +1660,16 @@ function esc(s) {
   return String(s).replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
 }
 
-function addCurve(name) {
+function columnTitle(c, axis) {
+  return String(c[axis + 'ColumnTitle'] || '').trim() || axis.toUpperCase();
+}
+
+function addCurve(name, xColumnTitle, yColumnTitle) {
   curveSeq++;
   const color = PALETTE[(curveSeq - 1) % PALETTE.length];
   const displayName = name || ('曲线 ' + curveSeq);
+  const columnX = xColumnTitle == null ? 'X' : String(xColumnTitle);
+  const columnY = yColumnTitle == null ? 'Y' : String(yColumnTitle);
   const sec = document.createElement('div');
   sec.className = 'curve-sec';
   sec.dataset.id = 'c' + curveSeq;
@@ -1657,19 +1681,30 @@ function addCurve(name) {
     '<label class="chk" title="显示/隐藏"><input class="curve-vis" type="checkbox" checked> 显示</label>' +
     '<button class="btn-sm" type="button">删除</button>' +
     '</div>' +
+    '<div class="curve-head">' +
+    '<label class="f curve-coltitle">X 列名<input class="curve-x-coltitle" type="text" value="' + esc(columnX) + '" placeholder="X"></label>' +
+    '<label class="f curve-coltitle">Y 列名<input class="curve-y-coltitle" type="text" value="' + esc(columnY) + '" placeholder="Y"></label>' +
+    '</div>' +
     '<label class="f">X 数据 <textarea class="xData" spellcheck="false" placeholder="粘贴 X 值…"></textarea></label>' +
     '<label class="f">Y 数据 <textarea class="yData" spellcheck="false" placeholder="粘贴 Y 值…"></textarea></label>';
   curvesBox.append(sec);
-  const curve = { id: 'c' + curveSeq, name: displayName, color: color, visible: true, width: 2, xs: [], ys: [] };
+  const curve = {
+    id: 'c' + curveSeq, name: displayName, color: color, visible: true, width: 2,
+    xColumnTitle: columnX, yColumnTitle: columnY, xs: [], ys: []
+  };
   curves.push(curve);
 
   const nameInput = sec.querySelector('.curve-name');
   const colorInput = sec.querySelector('.curve-color');
   const visInput = sec.querySelector('.curve-vis');
   const widthInput = sec.querySelector('.curve-width');
+  const xColumnInput = sec.querySelector('.curve-x-coltitle');
+  const yColumnInput = sec.querySelector('.curve-y-coltitle');
   nameInput.addEventListener('input', () => { curve.name = nameInput.value.trim() || displayName; redraw(); scheduleSave(); refreshMarkerCurveSel(); });
   colorInput.addEventListener('input', () => { curve.color = colorInput.value; redraw(); scheduleSave(); });
   visInput.addEventListener('change', () => { curve.visible = visInput.checked; redraw(); scheduleSave(); });
+  xColumnInput.addEventListener('input', () => { curve.xColumnTitle = xColumnInput.value; scheduleSave(); });
+  yColumnInput.addEventListener('input', () => { curve.yColumnTitle = yColumnInput.value; scheduleSave(); });
   widthInput.addEventListener('input', () => {
     let w = parseFloat(widthInput.value);
     if (!isFinite(w)) w = 2;
@@ -1940,11 +1975,12 @@ function buildExportRows() {
         isFinite(s.dx) ? s.dx : '', isFinite(s.dy) ? s.dy : '']);
     }
   }
+  for (const c of valid) rows.push(['Column Titles', c.name, columnTitle(c, 'x'), columnTitle(c, 'y')]);
   rows.push([]);
   const heads = [];
   for (const c of valid) {
-    heads.push(c.name + ' X');
-    heads.push(c.name + ' Y');
+    heads.push(c.name + ' ' + columnTitle(c, 'x'));
+    heads.push(c.name + ' ' + columnTitle(c, 'y'));
   }
   rows.push(heads);
   const dispAll = valid.map((c) => (exportClean ? getDisplayData(c, readConfig().xScale === 'log') : c));
@@ -2145,7 +2181,8 @@ function makeXlsx(dataRows, note) {
 function exportExcel() {
   const out = buildExportRows();
   if (!out) return;
-  const bytes = makeXlsx(out.rows, $('explanationInput').value);
+  const dataRows = out.rows.filter((row) => row[0] !== 'Explanation' && row[0] !== '说明');
+  const bytes = makeXlsx(dataRows, $('explanationInput').value);
   const type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
   downloadBlob(new Blob([bytes], { type }), 'curve-data.xlsx');
   status('已导出 Excel:曲线数据 + 说明,共 ' + out.dataCount + ' 行数据');
@@ -2188,17 +2225,32 @@ function loadDataFromFile(file) {
   file.text().then((text) => {
     const rows = parseCSV(text);
     let dataStart = -1, wide = false;
+    let lastColumnTitleRow = -1;
+    const columnTitles = [];
     for (let i = 0; i < rows.length; i++) {
       const r = rows[i];
       if (!r || !r.length) continue;
       const a = String(r[0]).trim().toLowerCase();
       const b = String(r[1] || '').trim().toLowerCase();
+      if ((a === 'column titles' || a === '列标题') && r.length >= 4) {
+        columnTitles.push({
+          name: String(r[1]).trim(),
+          x: String(r[2]).trim() || 'X',
+          y: String(r[3]).trim() || 'Y'
+        });
+        lastColumnTitleRow = i;
+        continue;
+      }
       if ((a === '曲线' || a === 'curve') && b === 'x') { dataStart = i; break; }
       if (axisColumnName(r[0], 'x') !== null && axisColumnName(r[1], 'y') !== null) {
         dataStart = i;
         wide = true;
         break;
       }
+    }
+    if (lastColumnTitleRow >= 0) {
+      dataStart = lastColumnTitleRow + 1;
+      wide = true;
     }
     if (dataStart < 0) {
       warn('CSV 格式不正确:未找到数据表头(旧格式 曲线,x,y 或宽表 X/Y 列)');
@@ -2209,6 +2261,7 @@ function loadDataFromFile(file) {
       const r = rows[i];
       if (!r || !r.length) continue;
       const key = String(r[0]).trim();
+      if (key === 'Column Titles' || key === '列标题') continue;
       if ((key === '曲线线宽' || key === '曲线粗细' || key === 'Line Width') && r.length >= 3)
         metaWidths[String(r[1]).trim()] = parseFloat(r[2]);
       else if ((key === '标记' || key === 'Marker') && r.length >= 6 &&
@@ -2223,11 +2276,15 @@ function loadDataFromFile(file) {
     if (wide) {
       const head = rows[dataStart];
       const names = [];
-      for (let k = 0; k + 1 < head.length; k += 2) {
-        const xName = axisColumnName(head[k], 'x');
-        const yName = axisColumnName(head[k + 1], 'y');
-        if (xName === null || yName === null) break;
-        names.push(xName);
+      if (columnTitles.length) {
+        for (const t of columnTitles) names.push(t.name);
+      } else {
+        for (let k = 0; k + 1 < head.length; k += 2) {
+          const xName = axisColumnName(head[k], 'x');
+          const yName = axisColumnName(head[k + 1], 'y');
+          if (xName === null || yName === null) break;
+          names.push(xName);
+        }
       }
       for (let i = dataStart + 1; i < rows.length; i++) {
         const r = rows[i];
@@ -2280,13 +2337,16 @@ function loadDataFromFile(file) {
     };
     setAxisMode('xScaleSel', 'X Axis Mode');
     setAxisMode('yScaleSel', 'Y Axis Mode');
+    const columnTitleByName = {};
+    for (const t of columnTitles) columnTitleByName[t.name] = t;
     while (curves.length) {
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
       if (sec) sec.remove();
       curves.pop();
     }
     for (const name of order) {
-      const c = addCurve(name);
+      const t = columnTitleByName[name];
+      const c = addCurve(name, t ? t.x : undefined, t ? t.y : undefined);
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
       sec.querySelector('.xData').value = groups[name].xs.join(' ');
       sec.querySelector('.yData').value = groups[name].ys.join(' ');
@@ -2350,6 +2410,8 @@ function saveState() {
         const sec = secs[i];
         return {
           name: c.name, color: c.color, visible: c.visible, width: c.width,
+          xColumnTitle: sec ? sec.querySelector('.curve-x-coltitle').value : c.xColumnTitle,
+          yColumnTitle: sec ? sec.querySelector('.curve-y-coltitle').value : c.yColumnTitle,
           xText: sec ? sec.querySelector('.xData').value : '',
           yText: sec ? sec.querySelector('.yData').value : ''
         };
@@ -2422,7 +2484,7 @@ function loadState() {
   let hasData = false;
   if (savedCurves) {
     for (const sc of savedCurves) {
-      const c = addCurve(sc.name);
+      const c = addCurve(sc.name, sc.xColumnTitle, sc.yColumnTitle);
       const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
       if (sc.color) { c.color = sc.color; sec.querySelector('.curve-color').value = sc.color; }
       c.visible = sc.visible !== false;

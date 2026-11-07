@@ -1,10 +1,11 @@
 /* Tools 工具集 Service Worker —— 只缓存本站静态资源，不碰第三方接口 */
-var VERSION = 'tools-v1';
+var VERSION = 'tools-v4';
 var CORE = [
   './',
   './index.html',
   './calculator.html',
   './bit-to-hex-x6.html',
+  './dec-hex-converter.html',
   './xy-plotter.html',
   './svg-to-pptx.html',
   './image-to-markdown.html',

@@ -38,6 +38,15 @@ h1{font-size:24px; margin:0 0 6px}
 }
 .card:hover{border-color:var(--accent); transform:translateY(-2px)}
 .card img{width:100%; border-radius:10px; border:1px solid var(--border); margin-bottom:12px}
+.card-icon{
+  display:grid; place-items:center; height:152px; margin-bottom:12px;
+  border:1px solid var(--border); border-radius:10px;
+  background:
+    linear-gradient(135deg,color-mix(in srgb,var(--accent) 13%,transparent),transparent 58%),
+    var(--bg);
+  color:var(--accent); font:700 24px/1.05 "Cascadia Mono",Consolas,monospace;
+  letter-spacing:.08em; text-align:center;
+}
 .card h2{font-size:17px; margin:0 0 6px}
 .card p{font-size:13px; color:var(--muted); margin:0 0 10px; line-height:1.6}
 .tag{
@@ -63,6 +72,12 @@ h1{font-size:24px; margin:0 0 6px}
       <h2>32 位位选择器 × 6</h2>
       <p>6 个独立的 32 位数值编辑器,逐位开关实时转换 HEX / 十进制,可写注释。</p>
       <span class="tag">位操作</span><span class="tag">HEX</span><span class="tag">×6</span>
+    </a>
+    <a class="card" href="dec-hex-converter.html">
+      <div class="card-icon" aria-hidden="true">10<br>↕<br>16</div>
+      <h2>十进制 ↔ 十六进制</h2>
+      <p>粘贴一个数字或一整列数字,自动补全十进制与十六进制,并可直接左移或右移指定位数,同时给出移位后的 DEC / HEX。</p>
+      <span class="tag">批量转换</span><span class="tag">DEC</span><span class="tag">HEX</span><span class="tag">移位</span>
     </a>
     <a class="card" href="svg-to-pptx.html">
       <img src="svg-to-pptx-preview.png" alt="SVG 转可编辑 PPT 预览">

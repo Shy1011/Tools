@@ -33,9 +33,9 @@
 - 选点读取:单击数据点可添加/取消标记,支持同时标记多个点并列出各自坐标,「清除全部标记」一键清空
 - 刻度方式可选:自动漂亮数(1/2/5×10ⁿ)、等分 N 段、固定步长、数据点位置、自定义刻度列表
 - 交互:图例点击显隐曲线、鼠标悬停显示曲线名与精确坐标、框选放大、按住空格或「平移」拖动、双击重置视图
-- 数据导出 / 载入:一键导出 CSV(曲线名,x,y,Excel 可打开),也可载入相同格式的 CSV / TXT 恢复多条曲线与解释说明
+- 数据导出 / 载入:一键导出 CSV 或 Excel;Excel 中曲线数据与解释说明分两个 Sheet,CSV / TXT 可恢复多条曲线、列名与解释说明
 - 解释说明:侧边栏可填写不显示在图表中的实验说明;内容自动保存,并作为独立元数据字段写入 CSV
-- 自动保存:标题、轴标签的文字/字体/字号/颜色与位置、坐标轴与刻度设置、曲线数据都会保存在当前浏览器,刷新后原样恢复
+- 自动保存:标题、轴标签的文字/字体/字号/颜色与位置、曲线列名、坐标轴与刻度设置、曲线数据都会保存在当前浏览器,刷新后原样恢复
 - 导出 PNG;亮色 / 暗色主题切换;完全离线,无任何外部依赖
 
 ![预览截图](xy-plotter-preview.png)
@@ -109,6 +109,22 @@
 
 ![预览截图](calculator-preview.png)
 
+### 6. 十进制 ↔ 十六进制批量转换(`dec-hex-converter.html`)
+
+粘贴一个数字或一整列数字,同时得到十进制和十六进制结果,还可对整个列表执行左移或右移,适合快速整理寄存器地址、配置值和导出数据。
+
+功能:
+
+- 支持 `1213`、`1098` 等十进制,以及 `0x0123`、`0xFFA`、`FFAh` 等十六进制混用
+- 每行一个数字,也支持用空格或 Tab 分隔;自动忽略空行,错误项单独标出
+- 使用 `BigInt` 精确转换,支持超过 64 位的整数及负数,不会出现 JavaScript 浮点精度丢失
+- 可对整个列表选择左移 / 右移及 0–1024 位,额外生成移位后的十进制和十六进制列
+- 可一键复制原始或移位的 DEC / HEX 列,或复制成 `DEC<Tab>HEX<Tab>SHIFT_DEC<Tab>SHIFT_HEX` 四列,直接粘贴到 Excel
+- `HEX 补零`支持智能、不补零、至少 4 / 8 / 16 位,输入内容自动保存在浏览器本地
+- 浅色 / 深色自动适配,桌面双栏、手机单栏,纯本地运行
+
+![预览截图](dec-hex-converter-preview.png)
+
 ## 使用方法
 
 1. 克隆或下载本仓库;
@@ -131,6 +147,8 @@
 | --- | --- |
 | `bit-to-hex-x6.html` | 32 位位选择器 × 6 工具页 |
 | `bit-to-hex-x6-preview.png` | 工具预览截图 |
+| `dec-hex-converter.html` | 十进制 / 十六进制批量转换工具页 |
+| `dec-hex-converter-preview.png` | 工具预览截图 |
 | `xy-plotter.html` | XY 曲线绘图·简易版 |
 | `xy-plotter-preview.png` | 工具预览截图 |
 | `svg-to-pptx.html` | SVG 转可编辑 PPT 工具页 |
@@ -146,6 +164,7 @@
 
 - 纯原生 HTML / CSS / JavaScript,零第三方依赖,离线可用
 - 位选择器按 32 位无符号整数计算;bit 31 置位时,`int32` 一栏显示补码形式的负数;注释保存在浏览器 `localStorage`
+- 进制转换工具使用 `BigInt` 做精确整数运算,按行或空白分隔输入;移位同样使用 `BigInt`,不做固定位宽截断。页面暴露 `window.DHC.convert(text, options)`(可传 `shiftDirection` / `shiftBits`),并支持 `?demo=1` 示例入口供自动化测试
 - 曲线工具中,标题 / 轴标签位置与曲线数据均保存在当前浏览器本地;Log 坐标会自动跳过 0 和负数
 - SVG 转 PPT 工具用浏览器 DOM 解析 SVG(自动解析 CSS / class / `style` 与 `transform`),再按 DrawingML 规范现场生成 PPTX 与 ZIP 包,因此不需要任何第三方库;页面还对外暴露 `window.S2P.convert(...)` 与 `?qa=` / `?qaFile=` 两个自动化测试入口,方便脚本回归验证转换结果
 - 图片转 Markdown 工具用浏览器 `fetch` 直连 Google Gemini 的 `generativelanguage.googleapis.com/v1beta` 接口(该接口返回允许跨域的响应头,所以纯静态页面从 `file://` 打开也能直接调用),鉴权走 `x-goog-api-key` 请求头,图片以 base64 `inline_data` 传入,由 `systemInstruction` 约束输出格式;页面暴露 `window.I2M.convert(dataUrl, {key, model, extra})` 与 `I2M.listModels(key)`,并支持 `?demo=1`(加载内置示例图,不调用接口)与 `?demo=1&auto=1`(示例图直接跑一次识别)两个自动化入口

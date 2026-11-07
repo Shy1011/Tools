@@ -2,7 +2,7 @@
   "id": "./",
   "name": "Tools 工具集",
   "short_name": "Tools",
-  "description": "轻量网页工具集：全能计算器、图片公式转 Markdown、SVG 转可编辑 PPT、XY 曲线绘图、32 位位选择器。",
+  "description": "轻量网页工具集：十进制 / 十六进制批量转换、全能计算器、图片公式转 Markdown、SVG 转可编辑 PPT、XY 曲线绘图、32 位位选择器。",
   "lang": "zh-CN",
   "dir": "ltr",
   "start_url": "./index.html",
