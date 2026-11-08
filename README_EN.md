@@ -32,8 +32,10 @@ Features:
 - Axes: linear / log10 scaling (automatically filters and warns about 0 and negative values), grid toggle, polyline / smooth curve
 - Point picking: click a data point to add/remove a marker, mark multiple points at once with coordinates listed, one-click "Clear all markers"
 - Tick modes: auto pretty numbers (1/2/5×10ⁿ), N equal segments, fixed step, data point positions, custom tick list
+- Range statistics and fitting: choose an X range manually, from the current view, or with Shift+drag; analyze raw or displayed data for mean, standard deviation, RMS, peak-to-peak, and linear-fit slope, intercept, and R²
 - Interaction: click the legend to show/hide curves, hover to show the curve name and exact coordinates, box-select zoom, hold Space or "Pan" to drag, double-click to reset the view
-- Data export / import: one-click CSV or Excel export; Excel keeps curve data and notes on separate sheets, while CSV / TXT can restore curves, column titles, and notes
+- Data export / import: one-click CSV or Excel export; XLSX includes data, notes, an embedded chart image, and full plotting-state metadata, while CSV / TXT / XLSX can restore curves
+- Export filename: set one shared filename in the toolbar; when empty it uses the chart title, otherwise the entered text is used strictly as the base name
 - Notes: enter plot-independent experiment notes in the sidebar; they are saved automatically and stored as a separate CSV metadata field
 - Auto-save: title and axis label text/font/size/color and positions, curve-column titles, axis and tick settings, and curve data are all saved in the current browser and restored on refresh
 - PNG export; light / dark theme toggle; fully offline with no external dependencies
