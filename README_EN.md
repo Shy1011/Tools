@@ -39,6 +39,7 @@ Features:
 - Notes: enter plot-independent experiment notes in the sidebar; they are saved automatically and stored as a separate CSV metadata field
 - Auto-save: title and axis label text/font/size/color and positions, curve-column titles, axis and tick settings, and curve data are all saved in the current browser and restored on refresh
 - PNG export; light / dark theme toggle; fully offline with no external dependencies
+- Agent access: `window.XYPlotterAgent` exposes data, view, marker, cleanup, statistics, import and export actions; an optional local HTTP bridge supports external scripts
 
 ![Preview](xy-plotter-preview.png)
 

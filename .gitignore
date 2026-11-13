@@ -2,3 +2,10 @@
 *.local.html
 *.local.*
 *.key
+
+# Local Agent bridge runtime files
+agent-exports/
+__pycache__/
+agent/e2e/output/
+agent/e2e/http-output/
+/xy-plotter-test-20261113/

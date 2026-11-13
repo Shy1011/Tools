@@ -39,6 +39,7 @@
 - 解释说明:侧边栏可填写不显示在图表中的实验说明;内容自动保存,并作为独立元数据字段写入 CSV
 - 自动保存:标题、轴标签的文字/字体/字号/颜色与位置、曲线列名、坐标轴与刻度设置、曲线数据都会保存在当前浏览器,刷新后原样恢复
 - 导出 PNG;亮色 / 暗色主题切换;完全离线,无任何外部依赖
+- Agent 调用:页面内 `window.XYPlotterAgent` 提供数据、视图、标记、清理、统计和导入导出的完整 Action API;可选本地 HTTP 桥接供外部脚本调用
 
 ![预览截图](xy-plotter-preview.png)
 
@@ -52,6 +53,16 @@
 6. 通过「导出 PNG」「导出 CSV」或「导出 Excel」保存结果。
 
 X 数据留空时，会自动使用 `0, 1, 2, …` 作为 X 值。X 和 Y 数量不一致时，只使用较短一侧能够配对的点数；无法解析的非数字内容会被忽略。
+
+#### Agent API
+
+浏览器自动化可直接调用 `window.XYPlotterAgent.execute(action, params)`。需要使用本地 HTTP 时,运行:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\agent\start-agent-bridge.ps1
+```
+
+启动器会优先在 Edge 新标签页中打开隔离的 Agent 页面,通过 `127.0.0.1:8765` 暴露 44 个 Action,并将导出文件保存到 `agent-exports/`。完整接口与示例见 [`agent/README.md`](agent/README.md)。
 
 #### 多曲线设置
 

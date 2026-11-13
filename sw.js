@@ -1,5 +1,5 @@
 /* Tools 工具集 Service Worker —— 只缓存本站静态资源，不碰第三方接口 */
-var VERSION = 'tools-v4';
+var VERSION = 'tools-v5';
 var CORE = [
   './',
   './index.html',
@@ -7,6 +7,7 @@ var CORE = [
   './bit-to-hex-x6.html',
   './dec-hex-converter.html',
   './xy-plotter.html',
+  './agent/actions.json',
   './svg-to-pptx.html',
   './image-to-markdown.html',
   './manifest.json',
@@ -49,6 +50,16 @@ self.addEventListener('fetch', function (event) {
   var url;
   try { url = new URL(req.url); } catch (e) { return; }
   if (url.origin !== self.location.origin) return;   // API / 外部资源交给浏览器
+
+  // Agent capability catalog must never be pinned to an old service-worker cache.
+  if (url.pathname.endsWith('/agent/actions.json')) {
+    event.respondWith(
+      fetch(req)
+        .then(function (res) { return put(req, res); })
+        .catch(function () { return caches.match(req); })
+    );
+    return;
+  }
 
   // 页面导航：先用网络，断网时回退到缓存（再不行回首页）
   if (req.mode === 'navigate') {

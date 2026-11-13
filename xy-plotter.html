@@ -3,6 +3,8 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="agent-entrypoint" content="window.XYPlotterAgent">
+<meta name="agent-api" content="./agent/actions.json">
 <title>XY 曲线绘图(简易版)</title>
 <style>
 :root{
@@ -341,12 +343,12 @@ input:focus, select:focus, textarea:focus{
     </aside>
 
     <div class="canvas-wrap" id="canvasWrap">
-      <canvas id="canvas"></canvas>
+      <canvas id="canvas" role="img" aria-label="XY 曲线图"></canvas>
       <div class="tooltip" id="tooltip"></div>
     </div>
   </div>
 
-  <div class="status" id="status">就绪 — 粘贴 X、Y 数据后点击「绘图」</div>
+  <div class="status" id="status" role="status" aria-live="polite" aria-atomic="true">就绪 — 粘贴 X、Y 数据后点击「绘图」</div>
 
 <script>
 'use strict';
@@ -401,6 +403,26 @@ let statsDragRect = null;
 const statsResults = new Map();
 let pendingExcelState = null;
 
+const agentQuery = new URLSearchParams(window.location.search);
+let agentMode = agentQuery.get('agent') === '1';
+let agentFresh = agentQuery.get('fresh') === '1';
+let agentRevision = 0;
+let agentExecuting = false;
+let agentWarnings = [];
+let agentQueue = Promise.resolve();
+let agentCatalog = null;
+let agentLastError = null;
+let agentBridgeConnected = false;
+const agentBridgeUrl = String(agentQuery.get('bridge') || '').replace(/\/+$/, '');
+const agentBridgeToken = String(agentQuery.get('token') || '');
+const agentSessionId = (() => {
+  if (window.crypto && typeof window.crypto.randomUUID === 'function') return window.crypto.randomUUID();
+  return 'session-' + Date.now().toString(36) + '-' + Math.random().toString(36).slice(2);
+})();
+document.documentElement.dataset.agentMode = agentMode ? '1' : '0';
+document.documentElement.dataset.agentState = 'booting';
+document.documentElement.dataset.agentApiVersion = '1.0.0';
+
 const canvas = $('canvas');
 const ctx = canvas.getContext('2d');
 
@@ -417,6 +439,7 @@ function parseList(text) {
 }
 
 function plot() {
+  setAgentLifecycle('plotting');
   const oldData = curves.map((c) => ({ id: c.id, xs: c.xs, ys: c.ys }));
   let total = 0;
   for (const c of curves) {
@@ -450,12 +473,25 @@ function plot() {
     Number.isInteger(s.xi) && s.xi >= 0 && s.xi < curves[s.ci].xs.length);
   updateSelInfo();
   const valid = curves.filter((c) => c.xs.length >= 2);
-  if (!valid.length) { updateStats(); warn('至少需要一条包含 2 个以上有效数据点的曲线'); return; }
+  if (!valid.length) {
+    updateStats();
+    warn('至少需要一条包含 2 个以上有效数据点的曲线');
+    setAgentLifecycle('error');
+    return false;
+  }
   $('info').textContent = curves.map((c) => c.name + ':' + c.xs.length + '点').join('   ');
   resetView();
+  computeView(readConfig());
   status('已绘制 ' + valid.length + ' 条曲线,共 ' + total + ' 个点');
   updateStats();
   scheduleSave();
+  agentRevision++;
+  setAgentLifecycle('plotted', {
+    revision: agentRevision,
+    curveCount: valid.length,
+    pointCount: total
+  });
+  return true;
 }
 
 function clearAll() {
@@ -477,6 +513,8 @@ function clearAll() {
   resetView();
   updateStats();
   scheduleSave();
+  agentRevision++;
+  setAgentLifecycle('ready', { revision: agentRevision });
 }
 
 // ---------- 配置与范围 ----------
@@ -1828,16 +1866,28 @@ function makeChartCanvas(scale) {
   return c;
 }
 
-$('pngBtn').addEventListener('click', () => {
-  const c = makeChartCanvas(2);
-  c.toBlob((blob) => {
-    const a = document.createElement('a');
-    a.href = URL.createObjectURL(blob);
-    a.download = exportFilename('.png');
-    a.click();
-    setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+function buildPngArtifact(options) {
+  options = options || {};
+  return new Promise((resolve, reject) => {
+    const c = makeChartCanvas(Number(options.scale) || 2);
+    c.toBlob((blob) => {
+      if (!blob) {
+        reject(new Error('PNG 编码失败'));
+        return;
+      }
+      resolve({ blob: blob, filename: exportFilename('.png') });
+    }, 'image/png');
+  });
+}
+
+$('pngBtn').addEventListener('click', async () => {
+  try {
+    const artifact = await buildPngArtifact({ scale: 2 });
+    downloadBlob(artifact.blob, artifact.filename);
     status('PNG 已导出');
-  }, 'image/png');
+  } catch (e) {
+    warn('PNG 导出失败:' + e.message);
+  }
 });
 $('exportDataBtn').addEventListener('click', exportData);
 $('exportExcelBtn').addEventListener('click', exportExcel);
@@ -1954,24 +2004,36 @@ function addCurve(name, xColumnTitle, yColumnTitle) {
   const columnY = yColumnTitle == null ? 'Y' : String(yColumnTitle);
   const sec = document.createElement('div');
   sec.className = 'curve-sec';
-  sec.dataset.id = 'c' + curveSeq;
+  const curveId = 'c' + curveSeq;
+  sec.dataset.id = curveId;
+  sec.dataset.curveId = curveId;
   sec.innerHTML =
     '<div class="curve-head">' +
-    '<input class="curve-name" type="text" value="' + esc(displayName) + '" placeholder="曲线名称">' +
-    '<input class="curve-color" type="color" value="' + color + '">' +
-    '<label class="f curve-wlabel" title="线条粗细"><input class="curve-width num" type="number" value="2" min="1" max="12" step="0.5"></label>' +
-    '<label class="chk" title="显示/隐藏"><input class="curve-vis" type="checkbox" checked> 显示</label>' +
-    '<button class="btn-sm" type="button">删除</button>' +
+    '<input class="curve-name" data-field="name" type="text" value="' + esc(displayName) + '" placeholder="曲线名称">' +
+    '<input class="curve-color" data-field="color" type="color" value="' + color + '">' +
+    '<label class="f curve-wlabel" title="线条粗细"><input class="curve-width num" data-field="width" type="number" value="2" min="1" max="12" step="0.5"></label>' +
+    '<label class="chk" title="显示/隐藏"><input class="curve-vis" data-field="visible" type="checkbox" checked> 显示</label>' +
+    '<button class="btn-sm" data-action="delete-curve" type="button">删除</button>' +
     '</div>' +
     '<div class="curve-head">' +
-    '<label class="f curve-coltitle">X 列名<input class="curve-x-coltitle" type="text" value="' + esc(columnX) + '" placeholder="X"></label>' +
-    '<label class="f curve-coltitle">Y 列名<input class="curve-y-coltitle" type="text" value="' + esc(columnY) + '" placeholder="Y"></label>' +
+    '<label class="f curve-coltitle">X 列名<input class="curve-x-coltitle" data-field="xColumnTitle" type="text" value="' + esc(columnX) + '" placeholder="X"></label>' +
+    '<label class="f curve-coltitle">Y 列名<input class="curve-y-coltitle" data-field="yColumnTitle" type="text" value="' + esc(columnY) + '" placeholder="Y"></label>' +
     '</div>' +
-    '<label class="f">X 数据 <textarea class="xData" spellcheck="false" placeholder="粘贴 X 值…"></textarea></label>' +
-    '<label class="f">Y 数据 <textarea class="yData" spellcheck="false" placeholder="粘贴 Y 值…"></textarea></label>';
+    '<label class="f">X 数据 <textarea class="xData" data-field="xText" data-axis="x" spellcheck="false" placeholder="粘贴 X 值…"></textarea></label>' +
+    '<label class="f">Y 数据 <textarea class="yData" data-field="yText" data-axis="y" spellcheck="false" placeholder="粘贴 Y 值…"></textarea></label>';
   curvesBox.append(sec);
+  sec.querySelector('.curve-name').setAttribute('aria-label', displayName + ' 的曲线名称');
+  sec.querySelector('.curve-color').setAttribute('aria-label', displayName + ' 的曲线颜色');
+  sec.querySelector('.curve-width').setAttribute('aria-label', displayName + ' 的线宽');
+  sec.querySelector('.curve-vis').setAttribute('aria-label', displayName + ' 是否显示');
+  sec.querySelector('[data-action="delete-curve"]').setAttribute('aria-label', '删除曲线 ' + displayName);
+  sec.querySelector('.curve-x-coltitle').setAttribute('aria-label', displayName + ' 的 X 列名');
+  sec.querySelector('.curve-y-coltitle').setAttribute('aria-label', displayName + ' 的 Y 列名');
+  sec.querySelector('.xData').setAttribute('aria-label', displayName + ' 的 X 数据');
+  sec.querySelector('.yData').setAttribute('aria-label', displayName + ' 的 Y 数据');
+  sec.querySelectorAll('[data-field]').forEach((el) => { el.dataset.curveId = curveId; });
   const curve = {
-    id: 'c' + curveSeq, name: displayName, color: color, visible: true, width: 2,
+    id: curveId, name: displayName, color: color, visible: true, width: 2,
     xColumnTitle: columnX, yColumnTitle: columnY, xs: [], ys: []
   };
   curves.push(curve);
@@ -1984,6 +2046,12 @@ function addCurve(name, xColumnTitle, yColumnTitle) {
   const yColumnInput = sec.querySelector('.curve-y-coltitle');
   nameInput.addEventListener('input', () => {
     curve.name = nameInput.value.trim() || displayName;
+    sec.setAttribute('aria-label', curve.name);
+    sec.querySelector('.curve-x-coltitle').setAttribute('aria-label', curve.name + ' 的 X 列名');
+    sec.querySelector('.curve-y-coltitle').setAttribute('aria-label', curve.name + ' 的 Y 列名');
+    sec.querySelector('.xData').setAttribute('aria-label', curve.name + ' 的 X 数据');
+    sec.querySelector('.yData').setAttribute('aria-label', curve.name + ' 的 Y 数据');
+    sec.querySelector('[data-action="delete-curve"]').setAttribute('aria-label', '删除曲线 ' + curve.name);
     refreshMarkerCurveSel();
     updateStats();
     redraw();
@@ -2258,8 +2326,15 @@ function performErase(px1, py1, px2, py2, clickX, clickY) {
 }
 
 // ---------- 工具与初始化 ----------
-function status(msg) { $('status').textContent = msg; }
-function warn(msg) { $('status').textContent = '⚠ ' + msg; }
+function status(msg) {
+  $('status').textContent = msg;
+  if (agentExecuting) $('status').dataset.agentMessage = msg;
+}
+function warn(msg) {
+  $('status').textContent = '⚠ ' + msg;
+  $('status').dataset.agentMessage = msg;
+  if (agentExecuting) agentWarnings.push(String(msg));
+}
 
 function csvField(v) {
   const s = String(v == null ? '' : v);
@@ -2331,15 +2406,32 @@ function downloadBlob(blob, filename) {
   a.download = filename;
   a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 2000);
+  return {
+    filename: filename,
+    size: blob.size,
+    mime: blob.type || 'application/octet-stream',
+    downloadTriggered: true
+  };
+}
+
+function buildCsvArtifact() {
+  const out = buildExportRows();
+  if (!out) return null;
+  const rows = out.rows.map((r) => r.map(csvField).join(','));
+  const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
+  return { blob: blob, out: out, filename: exportFilename('.csv') };
 }
 
 function exportData() {
-  const out = buildExportRows();
-  if (!out) return;
-  const rows = out.rows.map((r) => r.map(csvField).join(','));
-  const blob = new Blob(['\ufeff' + rows.join('\n')], { type: 'text/csv;charset=utf-8' });
-  downloadBlob(blob, exportFilename('.csv'));
-  status('已导出 CSV:' + out.valid.length + ' 条曲线,共 ' + out.dataCount + ' 行数据');
+  const artifact = buildCsvArtifact();
+  if (!artifact) return null;
+  const meta = downloadBlob(artifact.blob, artifact.filename);
+  status('已导出 CSV:' + artifact.out.valid.length + ' 条曲线,共 ' + artifact.out.dataCount + ' 行数据');
+  return {
+    ...meta,
+    curveCount: artifact.out.valid.length,
+    dataCount: artifact.out.dataCount
+  };
 }
 
 const CRC_TABLE = (() => {
@@ -2575,9 +2667,9 @@ function excelStateSnapshot() {
   return state;
 }
 
-function exportExcel() {
+function buildExcelArtifact() {
   const out = buildExportRows();
-  if (!out) return;
+  if (!out) return null;
   const dataRows = out.rows.filter((row) => row[0] !== 'Explanation' && row[0] !== '说明');
   let stateIndex = dataRows.findIndex((row) => row[0] === 'Column Titles' || row[0] === '列标题');
   if (stateIndex < 0) stateIndex = dataRows.findIndex((row) => !row.length);
@@ -2589,8 +2681,23 @@ function exportExcel() {
   const chartCy = Math.max(1, Math.round(cssH * 9525));
   const bytes = makeXlsx(dataRows, $('explanationInput').value, chartImage, chartCx, chartCy);
   const type = 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet';
-  downloadBlob(new Blob([bytes], { type }), exportFilename('.xlsx'));
-  status('已导出 Excel:曲线数据 + 图表 + 说明,共 ' + out.dataCount + ' 行数据');
+  return {
+    blob: new Blob([bytes], { type }),
+    out: out,
+    filename: exportFilename('.xlsx')
+  };
+}
+
+function exportExcel() {
+  const artifact = buildExcelArtifact();
+  if (!artifact) return null;
+  const meta = downloadBlob(artifact.blob, artifact.filename);
+  status('已导出 Excel:曲线数据 + 图表 + 说明,共 ' + artifact.out.dataCount + ' 行数据');
+  return {
+    ...meta,
+    curveCount: artifact.out.valid.length,
+    dataCount: artifact.out.dataCount
+  };
 }
 
 function parseCSV(text) {
@@ -2952,8 +3059,8 @@ function loadDataFromFile(file) {
         };
       });
       importedExcelState.settings.explanation = $('explanationInput').value;
-      localStorage.setItem('xy-plotter-state', JSON.stringify(importedExcelState));
-      loadState();
+      localStorage.setItem(agentMode ? 'xy-plotter-agent-state' : 'xy-plotter-state', JSON.stringify(importedExcelState));
+      loadState({ force: true });
       status('已从 XLSX 恢复完整绘图状态:' + order.length + ' 条曲线');
       return;
     }
@@ -2965,7 +3072,7 @@ function loadDataFromFile(file) {
 let saveTimer = null;
 function scheduleSave() {
   clearTimeout(saveTimer);
-  saveTimer = setTimeout(saveState, 300);
+  if (!agentMode) saveTimer = setTimeout(saveState, 300);
 }
 
 function collectPlotState() {
@@ -3015,17 +3122,25 @@ function collectPlotState() {
 }
 
 function saveState() {
+  if (agentMode) return false;
   try {
     const state = collectPlotState();
     localStorage.setItem('xy-plotter-state', JSON.stringify(state));
+    return true;
   } catch (e) {
     warn('自动保存失败:数据可能过大');
+    return false;
   }
 }
 
-function loadState() {
+function loadState(options) {
+  options = options || {};
   let state = null;
-  try { state = JSON.parse(localStorage.getItem('xy-plotter-state') || 'null'); } catch (e) {}
+  const persistedKey = agentMode ? 'xy-plotter-agent-state' : 'xy-plotter-state';
+  const ignoreStored = agentMode && agentFresh && !options.force;
+  try {
+    state = ignoreStored ? null : JSON.parse(localStorage.getItem(persistedKey) || 'null');
+  } catch (e) {}
   $('exportFileNameInput').value = state && state.exportFileName != null ? state.exportFileName : '';
   if (state && (state.theme === 'dark' || state.theme === 'light')) {
     theme = state.theme;
@@ -3147,6 +3262,1051 @@ function loadState() {
   syncModeBadgeUI();
 }
 
+// ---------- Agent API ----------
+const AGENT_ACTION_FALLBACK = Object.freeze([
+  'capabilities.get', 'chart.getState', 'chart.getSummary',
+  'project.replace', 'project.patch', 'project.reset', 'project.example',
+  'project.save', 'project.load', 'curve.add', 'curve.update', 'curve.remove',
+  'curve.reorder', 'plot.render', 'plot.clear', 'view.reset', 'view.set',
+  'view.zoom', 'view.pan', 'style.update', 'label.setPosition', 'marker.add',
+  'marker.remove', 'marker.toggle', 'marker.markByX', 'marker.markByY',
+  'marker.setOffset', 'marker.clear', 'cursor.update', 'cursor.reset',
+  'cleanup.configure', 'cleanup.hideIndices', 'cleanup.eraseRegion',
+  'cleanup.undo', 'cleanup.redo', 'cleanup.restore', 'stats.configure',
+  'stats.get', 'interaction.update', 'import.csv', 'import.xlsx',
+  'export.png', 'export.csv', 'export.xlsx'
+]);
+const AGENT_MUTATING_ACTIONS = new Set([
+  'project.replace', 'project.patch', 'project.reset', 'project.example',
+  'project.load', 'curve.add', 'curve.update', 'curve.remove', 'curve.reorder',
+  'plot.render', 'plot.clear', 'view.reset', 'view.set', 'view.zoom',
+  'view.pan', 'style.update', 'label.setPosition', 'marker.add',
+  'marker.remove', 'marker.toggle', 'marker.markByX', 'marker.markByY',
+  'marker.setOffset', 'marker.clear', 'cursor.update', 'cursor.reset',
+  'cleanup.configure', 'cleanup.hideIndices', 'cleanup.eraseRegion',
+  'cleanup.undo', 'cleanup.redo', 'cleanup.restore', 'stats.configure',
+  'interaction.update', 'import.csv', 'import.xlsx'
+]);
+let agentActionSet = new Set(AGENT_ACTION_FALLBACK);
+
+function setAgentLifecycle(state, detail) {
+  document.documentElement.dataset.agentState = state;
+  window.dispatchEvent(new CustomEvent('xy-plotter-agent:state', {
+    detail: {
+      state: state,
+      revision: agentRevision,
+      ...(detail || {})
+    }
+  }));
+}
+
+class XYAgentError extends Error {
+  constructor(code, message, details) {
+    super(message);
+    this.name = 'XYAgentError';
+    this.code = code;
+    this.details = details || null;
+  }
+}
+
+function agentFail(code, message, details) {
+  throw new XYAgentError(code, message, details);
+}
+
+function hasOwn(obj, key) {
+  return !!obj && Object.prototype.hasOwnProperty.call(obj, key);
+}
+
+function agentDelay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+function agentSetControl(id, value, events) {
+  if (value === undefined) return;
+  const el = $(id);
+  if (!el) return;
+  if (el.type === 'checkbox') el.checked = value === 'true' || value === true || value === 1;
+  else el.value = value == null ? '' : String(value);
+  for (const type of (events || ['input', 'change'])) {
+    el.dispatchEvent(new Event(type, { bubbles: true }));
+  }
+}
+
+function applyAgentTheme(value) {
+  if (value === undefined) return;
+  const next = value === 'dark' ? 'dark' : 'light';
+  theme = next;
+  document.body.classList.toggle('dark', theme === 'dark');
+  $('darkBtn').textContent = theme === 'dark' ? '亮色模式' : '暗色模式';
+}
+
+function applyAgentSettings(input) {
+  if (!input || typeof input !== 'object') return;
+  const settings = {};
+  if (input.settings && typeof input.settings === 'object') Object.assign(settings, input.settings);
+  if (input.options && typeof input.options === 'object') Object.assign(settings, input.options);
+  for (const key of [
+    'title', 'titleSize', 'titleColor', 'titleTheme', 'xLabel', 'yLabel',
+    'axisFont', 'xLabelSize', 'xLabelColor', 'xLabelTheme', 'yLabelSize',
+    'yLabelColor', 'yLabelTheme', 'xScale', 'yScale', 'ticks', 'tickMode',
+    'tickStep', 'customTicks', 'grid', 'smooth', 'markerArrow', 'explanation',
+    'cleanEnabled', 'cleanWindow', 'cleanSmooth', 'fillGaps', 'exportClean',
+    'modeBadge', 'exportFileName', 'darkMode', 'theme'
+  ]) {
+    if (hasOwn(input, key) && !hasOwn(settings, key)) settings[key] = input[key];
+  }
+
+  const mapping = {
+    title: 'titleInput', titleSize: 'titleSize', titleColor: 'titleColor',
+    titleTheme: 'titleTheme', xLabel: 'xLabelInput', yLabel: 'yLabelInput',
+    axisFont: 'axisFontSel', xLabelSize: 'xLabelSize', xLabelColor: 'xLabelColor',
+    xLabelTheme: 'xLabelTheme', yLabelSize: 'yLabelSize',
+    yLabelColor: 'yLabelColor', yLabelTheme: 'yLabelTheme',
+    xScale: 'xScaleSel', yScale: 'yScaleSel', ticks: 'tickInput',
+    tickMode: 'tickModeSel', tickStep: 'tickStep', customTicks: 'customTicks',
+    grid: 'gridChk', smooth: 'smoothSel', markerArrow: 'markerArrowChk',
+    explanation: 'explanationInput', cleanEnabled: 'cleanEnableChk',
+    cleanSmooth: 'cleanSmoothChk', fillGaps: 'fillGapsChk',
+    exportClean: 'exportCleanChk', exportFileName: 'exportFileNameInput'
+  };
+  for (const [key, id] of Object.entries(mapping)) {
+    if (hasOwn(settings, key)) agentSetControl(id, settings[key], ['change']);
+  }
+  if (hasOwn(settings, 'cleanWindow')) {
+    let w = Math.round(Number(settings.cleanWindow));
+    if (!isFinite(w)) w = cleanWindow;
+    w = Math.max(3, Math.min(21, w));
+    if (w % 2 === 0) w++;
+    agentSetControl('cleanWindowInput', w, ['input', 'change']);
+  }
+  if (hasOwn(settings, 'modeBadge')) {
+    modeBadgeOn = settings.modeBadge !== false;
+    syncModeBadgeUI();
+  }
+  if (hasOwn(settings, 'theme')) applyAgentTheme(settings.theme);
+  else if (hasOwn(settings, 'darkMode')) applyAgentTheme(settings.darkMode ? 'dark' : 'light');
+  syncTickModeUI();
+  procRev++;
+  updateStats();
+  redraw();
+}
+
+function agentText(value) {
+  if (value == null) return '';
+  if (Array.isArray(value)) return value.join('\n');
+  return String(value);
+}
+
+function removeAllCurveSections() {
+  while (curves.length) {
+    const sec = curvesBox.querySelector('.curve-sec[data-id="' + curves[curves.length - 1].id + '"]');
+    if (sec) sec.remove();
+    curves.pop();
+  }
+  selected = [];
+  hiddenPoints = {};
+  undoStack = [];
+  redoStack = [];
+  displayCache.clear();
+  curveSeq = 0;
+  refreshMarkerCurveSel();
+}
+
+function locateAgentCurve(ref) {
+  if (ref == null) return null;
+  if (typeof ref === 'number' && Number.isInteger(ref)) return curves[ref] || null;
+  const text = String(ref);
+  return curves.find((c) => c.id === text) || curves.find((c) => c.name === text) || null;
+}
+
+function applyAgentCurveSpec(curve, spec) {
+  if (!curve || !spec || typeof spec !== 'object') return curve;
+  const sec = curvesBox.querySelector('.curve-sec[data-id="' + curve.id + '"]');
+  if (!sec) return curve;
+  const set = (selector, value, eventName) => {
+    if (value === undefined) return;
+    const el = sec.querySelector(selector);
+    if (!el) return;
+    if (el.type === 'checkbox') el.checked = value !== false;
+    else el.value = value == null ? '' : String(value);
+    el.dispatchEvent(new Event(eventName || 'input', { bubbles: true }));
+  };
+  set('.curve-name', spec.name);
+  set('.curve-color', spec.color);
+  set('.curve-width', spec.width);
+  set('.curve-vis', spec.visible, 'change');
+  set('.curve-x-coltitle', spec.xColumnTitle);
+  set('.curve-y-coltitle', spec.yColumnTitle);
+  set('.xData', hasOwn(spec, 'x') ? agentText(spec.x) : spec.xText);
+  set('.yData', hasOwn(spec, 'y') ? agentText(spec.y) : spec.yText);
+  return curve;
+}
+
+function addAgentCurve(spec) {
+  spec = spec || {};
+  const c = addCurve(spec.name, spec.xColumnTitle, spec.yColumnTitle);
+  return applyAgentCurveSpec(c, spec);
+}
+
+function agentCurveState(curve) {
+  const sec = curvesBox.querySelector('.curve-sec[data-id="' + curve.id + '"]');
+  return {
+    id: curve.id,
+    name: curve.name,
+    color: curve.color,
+    visible: curve.visible,
+    width: curve.width,
+    xColumnTitle: columnTitle(curve, 'x'),
+    yColumnTitle: columnTitle(curve, 'y'),
+    xText: sec ? sec.querySelector('.xData').value : '',
+    yText: sec ? sec.querySelector('.yData').value : '',
+    pointCount: curve.xs.length,
+    hiddenPointCount: hiddenPoints[curve.id] ? hiddenPoints[curve.id].size : 0
+  };
+}
+
+function agentSelectedState() {
+  return selected.map((s) => {
+    const c = curves[s.ci];
+    return {
+      curveIndex: s.ci,
+      curveId: c ? c.id : null,
+      curveName: c ? c.name : null,
+      pointIndex: s.xi,
+      x: c && c.xs[s.xi] !== undefined ? c.xs[s.xi] : null,
+      y: c && c.ys[s.xi] !== undefined ? c.ys[s.xi] : null,
+      dx: isFinite(s.dx) ? s.dx : null,
+      dy: isFinite(s.dy) ? s.dy : null
+    };
+  });
+}
+
+function agentStatsState() {
+  const range = readStatsRange();
+  const result = {
+    range: range.ok ? (range.all ? null : { xMin: range.min, xMax: range.max }) : null,
+    rangeError: range.ok ? null : range.message,
+    source: statsSource,
+    fitCurveId: statsFitCurveId,
+    showFit: statsShowFit,
+    curves: []
+  };
+  for (const [curveId, stats] of statsResults.entries()) {
+    const c = curves.find((item) => item.id === curveId);
+    result.curves.push({
+      curveId: curveId,
+      curveName: c ? c.name : '',
+      count: stats.count,
+      meanY: stats.meanY,
+      std: stats.std,
+      rms: stats.rms,
+      ptp: stats.ptp,
+      minX: stats.minX,
+      maxX: stats.maxX,
+      minY: stats.minY,
+      maxY: stats.maxY,
+      fit: stats.fit
+    });
+  }
+  return result;
+}
+
+function agentStateSnapshot() {
+  const state = collectPlotState();
+  return {
+    ...state,
+    apiVersion: '1.0.0',
+    sessionId: agentSessionId,
+    agentMode: agentMode,
+    revision: agentRevision,
+    status: document.documentElement.dataset.agentState || 'ready',
+    curves: curves.map(agentCurveState),
+    selected: agentSelectedState(),
+    statsResults: agentStatsState()
+  };
+}
+
+function agentSummary() {
+  const visible = curves.filter((c) => c.visible);
+  return {
+    revision: agentRevision,
+    status: document.documentElement.dataset.agentState || 'ready',
+    title: $('titleInput').value.trim(),
+    xLabel: $('xLabelInput').value.trim(),
+    yLabel: $('yLabelInput').value.trim(),
+    theme: theme,
+    bounds: {
+      xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax,
+      autoX: view.autoX, autoY: view.autoY,
+      xScale: $('xScaleSel').value, yScale: $('yScaleSel').value
+    },
+    curveCount: curves.length,
+    visibleCurveCount: visible.length,
+    pointCount: curves.reduce((sum, c) => sum + c.xs.length, 0),
+    visiblePointCount: visible.reduce((sum, c) => sum + c.xs.length, 0),
+    markerCount: selected.length,
+    hiddenPointCount: curves.reduce((sum, c) => sum + (hiddenPoints[c.id] ? hiddenPoints[c.id].size : 0), 0),
+    curves: curves.map((c) => ({
+      id: c.id, name: c.name, visible: c.visible,
+      pointCount: c.xs.length, color: c.color, width: c.width
+    })),
+    canvas: { width: cssW, height: cssH, dpr: dpr },
+    warnings: agentWarnings.slice()
+  };
+}
+
+function applyAgentView(params) {
+  params = params || {};
+  if (params.auto === true || params.reset === true) {
+    resetView();
+    return;
+  }
+  const cfg = readConfig();
+  const next = {
+    xMin: Number(params.xMin), xMax: Number(params.xMax),
+    yMin: Number(params.yMin), yMax: Number(params.yMax)
+  };
+  for (const key of Object.keys(next)) {
+    if (!isFinite(next[key])) agentFail('INVALID_PARAMS', '视图范围必须包含有效数字: ' + key);
+  }
+  if (next.xMin >= next.xMax || next.yMin >= next.yMax) {
+    agentFail('INVALID_PARAMS', '视图最小值必须小于最大值');
+  }
+  if (cfg.xScale === 'log' && (next.xMin <= 0 || next.xMax <= 0)) {
+    agentFail('INVALID_PARAMS', 'Log X 范围必须大于 0');
+  }
+  if (cfg.yScale === 'log' && (next.yMin <= 0 || next.yMax <= 0)) {
+    agentFail('INVALID_PARAMS', 'Log Y 范围必须大于 0');
+  }
+  view.xMin = next.xMin; view.xMax = next.xMax;
+  view.yMin = next.yMin; view.yMax = next.yMax;
+  syncRangeInputs();
+  updateStats();
+  redraw();
+}
+
+function applyAgentLabelPositions(input) {
+  input = input || {};
+  if (input.title) {
+    if (isFinite(input.title.x)) labelPos.title.x = Math.max(0, Math.min(1, Number(input.title.x)));
+    if (isFinite(input.title.y)) labelPos.title.y = Math.max(0, Math.min(cssH - 12, Number(input.title.y)));
+  }
+  if (input.xAxis) {
+    if (isFinite(input.xAxis.t)) labelPos.xAxis.t = Math.max(0, Math.min(1, Number(input.xAxis.t)));
+    if (isFinite(input.xAxis.d)) labelPos.xAxis.d = Number(input.xAxis.d);
+  }
+  if (input.yAxis) {
+    if (isFinite(input.yAxis.t)) labelPos.yAxis.t = Math.max(0, Math.min(1, Number(input.yAxis.t)));
+    if (isFinite(input.yAxis.d)) labelPos.yAxis.d = Number(input.yAxis.d);
+  }
+  redraw();
+}
+
+function agentToggleMarker(curveRef, pointIndex, mode) {
+  const c = locateAgentCurve(curveRef);
+  if (!c) agentFail('INVALID_PARAMS', '找不到指定曲线');
+  const ci = curves.indexOf(c);
+  const xi = Number(pointIndex);
+  if (!Number.isInteger(xi) || xi < 0 || xi >= c.xs.length) {
+    agentFail('INVALID_PARAMS', '标记点索引超出范围', { pointIndex: pointIndex });
+  }
+  const existing = selected.findIndex((s) => s.ci === ci && s.xi === xi);
+  if (mode === 'add') {
+    if (existing < 0) selected.push({ ci: ci, xi: xi });
+  } else if (mode === 'remove') {
+    if (existing >= 0) selected.splice(existing, 1);
+  } else if (existing >= 0) selected.splice(existing, 1);
+  else selected.push({ ci: ci, xi: xi });
+  updateSelInfo();
+  redraw();
+  scheduleSave();
+  return agentSelectedState();
+}
+
+function agentMarkByValue(axis, params) {
+  const c = locateAgentCurve(params.curveId != null ? params.curveId : params.curve);
+  if (!c) agentFail('INVALID_PARAMS', '找不到指定曲线');
+  const isX = axis === 'x';
+  const value = Number(isX ? params.x : params.y);
+  if (!isFinite(value)) agentFail('INVALID_PARAMS', '请提供有效数值');
+  const cfg = readConfig();
+  const log = isX ? cfg.xScale === 'log' : cfg.yScale === 'log';
+  const arr = isX ? c.xs : c.ys;
+  const other = isX ? c.ys : c.xs;
+  const ci = curves.indexOf(c);
+  let best = null;
+  for (let i = 0; i < arr.length; i++) {
+    if (!isFinite(arr[i]) || (log && arr[i] <= 0) || isHidden(ci, i)) continue;
+    const distance = Math.abs(arr[i] - value);
+    if (!best || distance < best.distance) best = { i: i, distance: distance };
+  }
+  if (!best) agentFail('INVALID_DATA', '曲线上没有可用的数据点');
+  const existing = selected.findIndex((s) => s.ci === ci && s.xi === best.i);
+  if (params.addOnly !== true && existing >= 0) selected.splice(existing, 1);
+  else if (existing < 0) selected.push({ ci: ci, xi: best.i });
+  updateSelInfo();
+  redraw();
+  scheduleSave();
+  return { pointIndex: best.i, selected: agentSelectedState() };
+}
+
+function agentHiddenCount() {
+  return Object.values(hiddenPoints).reduce((sum, set) => sum + (set ? set.size : 0), 0);
+}
+
+function agentHideCurveIndices(params) {
+  const entries = Array.isArray(params) ? params : params.curves;
+  if (!Array.isArray(entries) || !entries.length) agentFail('INVALID_PARAMS', '缺少 curves 索引列表');
+  pushUndo();
+  let hidden = 0;
+  for (const entry of entries) {
+    const c = locateAgentCurve(entry.curveId != null ? entry.curveId : entry.curve);
+    if (!c) agentFail('INVALID_PARAMS', '找不到指定曲线');
+    if (!Array.isArray(entry.indices)) agentFail('INVALID_PARAMS', 'indices 必须是数组');
+    if (!hiddenPoints[c.id]) hiddenPoints[c.id] = new Set();
+    for (const rawIndex of entry.indices) {
+      const index = Number(rawIndex);
+      if (!Number.isInteger(index) || index < 0 || index >= c.xs.length) {
+        agentFail('INVALID_PARAMS', '隐藏点索引超出范围', { index: rawIndex });
+      }
+      hiddenPoints[c.id].add(index);
+      hidden++;
+    }
+  }
+  procRev++;
+  displayCache.clear();
+  updateStats();
+  redraw();
+  scheduleSave();
+  return { hiddenCount: hidden, totalHiddenCount: agentHiddenCount() };
+}
+
+function agentEraseRegion(params) {
+  const xMin = Number(params.xMin), xMax = Number(params.xMax);
+  const yMin = Number(params.yMin), yMax = Number(params.yMax);
+  if (![xMin, xMax, yMin, yMax].every(isFinite) || xMin > xMax || yMin > yMax) {
+    agentFail('INVALID_PARAMS', '擦除区域必须包含有效且有序的 xMin/xMax/yMin/yMax');
+  }
+  const requested = Array.isArray(params.curveIds) ? params.curveIds : null;
+  const targets = requested ? requested.map(locateAgentCurve).filter(Boolean) : curves.slice();
+  pushUndo();
+  let hidden = 0;
+  for (const c of targets) {
+    if (!hiddenPoints[c.id]) hiddenPoints[c.id] = new Set();
+    for (let i = 0; i < c.xs.length; i++) {
+      if (c.xs[i] >= xMin && c.xs[i] <= xMax && c.ys[i] >= yMin && c.ys[i] <= yMax) {
+        hiddenPoints[c.id].add(i);
+        hidden++;
+      }
+    }
+  }
+  procRev++;
+  displayCache.clear();
+  updateStats();
+  redraw();
+  scheduleSave();
+  return { hiddenCount: hidden, totalHiddenCount: agentHiddenCount() };
+}
+
+function agentApplyCursors(input) {
+  input = input || {};
+  for (const axis of ['x', 'y']) {
+    if (!input[axis]) continue;
+    const value = input[axis];
+    if (hasOwn(value, 'on')) cursors[axis].on = !!value.on;
+    if (hasOwn(value, 'v1')) cursors[axis].v1 = isNum(value.v1) ? Number(value.v1) : null;
+    if (hasOwn(value, 'v2')) cursors[axis].v2 = isNum(value.v2) ? Number(value.v2) : null;
+    $('cursor' + axis.toUpperCase() + 'Chk').checked = cursors[axis].on;
+  }
+  if (cursors.x.on || cursors.y.on) ensureCursorPositions();
+  if (input.readoutPos) {
+    if (isFinite(input.readoutPos.tx)) readoutPos.tx = clampNum(Number(input.readoutPos.tx), 0, 1);
+    if (isFinite(input.readoutPos.ty)) readoutPos.ty = clampNum(Number(input.readoutPos.ty), 0, 1);
+  }
+  redraw();
+  scheduleSave();
+  return JSON.parse(JSON.stringify(cursors));
+}
+
+function agentApplyInteraction(input) {
+  input = input || {};
+  if (hasOwn(input, 'panMode')) {
+    panMode = !!input.panMode;
+    $('panBtn').setAttribute('aria-pressed', String(panMode));
+    $('panBtn').textContent = panMode ? '缩放' : '平移';
+    canvas.style.cursor = panMode ? 'grab' : 'crosshair';
+  }
+  if (hasOwn(input, 'eraserMode')) {
+    eraserMode = !!input.eraserMode;
+    $('eraserBtn').setAttribute('aria-pressed', String(eraserMode));
+    status(eraserMode ? '橡皮擦模式已开启' : '橡皮擦已关闭');
+  }
+  if (hasOwn(input, 'modeBadge')) {
+    modeBadgeOn = !!input.modeBadge;
+    syncModeBadgeUI();
+  }
+  if (hasOwn(input, 'theme')) applyAgentTheme(input.theme);
+  redraw();
+  scheduleSave();
+  return { panMode: panMode, eraserMode: eraserMode, modeBadge: modeBadgeOn, theme: theme };
+}
+
+function agentUseViewZoom(params) {
+  const factor = Number(params.factor);
+  if (!isFinite(factor) || factor <= 0 || factor > 10) {
+    agentFail('INVALID_PARAMS', 'zoom factor 必须是 0–10 之间的正数');
+  }
+  const cx = (view.xMin + view.xMax) / 2;
+  const cy = (view.yMin + view.yMax) / 2;
+  const halfX = (view.xMax - view.xMin) * factor / 2;
+  const halfY = (view.yMax - view.yMin) * factor / 2;
+  applyAgentView({ xMin: cx - halfX, xMax: cx + halfX, yMin: cy - halfY, yMax: cy + halfY });
+  return agentSummary().bounds;
+}
+
+function agentUseViewPan(params) {
+  const dx = Number(params.dx || 0);
+  const dy = Number(params.dy || 0);
+  if (!isFinite(dx) || !isFinite(dy)) agentFail('INVALID_PARAMS', 'pan dx/dy 必须是数字');
+  const spanX = view.xMax - view.xMin;
+  const spanY = view.yMax - view.yMin;
+  applyAgentView({
+    xMin: view.xMin + spanX * dx, xMax: view.xMax + spanX * dx,
+    yMin: view.yMin + spanY * dy, yMax: view.yMax + spanY * dy
+  });
+  return agentSummary().bounds;
+}
+
+function agentExportFilename(requested, extension) {
+  const value = String(requested || '').trim();
+  if (!value) return null;
+  return value.toLowerCase().endsWith(extension) ? value : value + extension;
+}
+
+async function agentSaveArtifact(blob, filename, requestId) {
+  if (!agentBridgeUrl || !agentBridgeToken) return null;
+  const query = new URLSearchParams({
+    filename: filename,
+    sessionId: agentSessionId,
+    requestId: requestId || ''
+  });
+  const response = await fetch(agentBridgeUrl + '/v1/artifact?' + query.toString(), {
+    method: 'POST',
+    headers: {
+      'X-Agent-Token': agentBridgeToken,
+      'Content-Type': 'application/octet-stream'
+    },
+    body: blob
+  });
+  if (!response.ok) throw new Error('本地文件保存失败: HTTP ' + response.status);
+  return response.json();
+}
+
+async function agentExport(kind, params, options) {
+  params = params || {};
+  let artifact;
+  if (kind === 'png') artifact = await buildPngArtifact({ scale: params.scale || 2 });
+  else if (kind === 'csv') artifact = buildCsvArtifact();
+  else if (kind === 'xlsx') artifact = buildExcelArtifact();
+  else agentFail('UNSUPPORTED_ACTION', '未知导出格式: ' + kind);
+  if (!artifact) agentFail('EXPORT_FAILED', '没有可导出的数据');
+  const extension = '.' + kind;
+  const requestedName = agentExportFilename(params.filename, extension);
+  if (requestedName) artifact.filename = requestedName;
+  const download = params.download !== false;
+  const meta = download
+    ? downloadBlob(artifact.blob, artifact.filename)
+    : { filename: artifact.filename, size: artifact.blob.size, mime: artifact.blob.type, downloadTriggered: false };
+  let saved = null;
+  try {
+    saved = await agentSaveArtifact(artifact.blob, artifact.filename, options && options.requestId);
+  } catch (e) {
+    warn('文件已生成,但本地桥接保存失败:' + e.message);
+  }
+  status(kind.toUpperCase() + ' 已导出');
+  return {
+    ...meta,
+    artifactPath: saved && saved.artifactPath ? saved.artifactPath : null,
+    revision: agentRevision
+  };
+}
+
+async function agentImportFile(file) {
+  const beforeDataRev = dataRev;
+  const beforeWarnings = agentWarnings.length;
+  const transfer = new DataTransfer();
+  transfer.items.add(file);
+  $('dataFileInput').files = transfer.files;
+  $('dataFileInput').dispatchEvent(new Event('change', { bubbles: true }));
+  const deadline = Date.now() + 20000;
+  while (Date.now() < deadline) {
+    if (dataRev !== beforeDataRev) break;
+    if (agentWarnings.length > beforeWarnings) {
+      agentFail('INVALID_DATA', agentWarnings[agentWarnings.length - 1]);
+    }
+    await agentDelay(50);
+  }
+  if (dataRev === beforeDataRev) agentFail('BROWSER_TIMEOUT', '导入文件超时');
+  return agentSummary();
+}
+
+function agentDecodeBase64(base64) {
+  const binary = atob(String(base64 || ''));
+  const bytes = new Uint8Array(binary.length);
+  for (let i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+  return bytes;
+}
+
+async function executeAgentAction(action, params, options) {
+  params = params || {};
+  switch (action) {
+    case 'capabilities.get':
+      return window.XYPlotterAgent.getCapabilities();
+    case 'chart.getState':
+      return agentStateSnapshot();
+    case 'chart.getSummary':
+      return agentSummary();
+    case 'project.replace': {
+      applyAgentSettings(params);
+      removeAllCurveSections();
+      const specs = Array.isArray(params.curves) ? params.curves : [];
+      for (const spec of specs) addAgentCurve(spec);
+      if (!curves.length) addCurve();
+      const hasData = curves.some((c) => {
+        const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+        return sec && sec.querySelector('.yData').value.trim();
+      });
+      if (hasData && !plot()) agentFail('INVALID_DATA', '没有足够的有效数据点');
+      else if (!hasData) { redraw(); updateStats(); }
+      if (params.view) applyAgentView(params.view);
+      if (params.cursors) agentApplyCursors(params.cursors);
+      if (params.labels) applyAgentLabelPositions(params.labels);
+      if (params.stats) {
+        if (hasOwn(params.stats, 'xMin') || hasOwn(params.stats, 'xMax')) {
+          agentSetControl('statsXMin', params.stats.xMin, ['change']);
+          agentSetControl('statsXMax', params.stats.xMax, ['change']);
+        }
+        if (params.stats.source) agentSetControl('statsSourceSel', params.stats.source, ['change']);
+        if (params.stats.fitCurveId) agentSetControl('statsFitCurveSel', params.stats.fitCurveId, ['change']);
+        if (hasOwn(params.stats, 'showFit')) agentSetControl('statsFitChk', params.stats.showFit, ['change']);
+      }
+      updateStats();
+      return agentSummary();
+    }
+    case 'project.patch': {
+      applyAgentSettings(params);
+      if (Array.isArray(params.curves)) {
+        for (const patch of params.curves) {
+          const c = locateAgentCurve(patch.id != null ? patch.id : (patch.curveId != null ? patch.curveId : patch.curve));
+          if (!c) agentFail('INVALID_PARAMS', '找不到要更新的曲线', { curve: patch.id || patch.curveId || patch.name });
+          applyAgentCurveSpec(c, patch);
+        }
+      }
+      if (Array.isArray(params.addCurves)) for (const spec of params.addCurves) addAgentCurve(spec);
+      if (Array.isArray(params.removeCurves)) {
+        for (const ref of params.removeCurves) {
+          const c = locateAgentCurve(ref);
+          if (!c) agentFail('INVALID_PARAMS', '找不到要删除的曲线');
+          const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+          if (sec) sec.querySelector('[data-action="delete-curve"]').click();
+        }
+        if (!curves.length) addCurve();
+      }
+      const hasData = curves.some((c) => c.xs.length);
+      if (hasData || params.curves || params.addCurves || params.removeCurves) {
+        if (!plot()) {
+          redraw();
+          updateStats();
+        }
+      }
+      if (params.view) applyAgentView(params.view);
+      if (params.labels) applyAgentLabelPositions(params.labels);
+      if (params.cursors) agentApplyCursors(params.cursors);
+      return agentSummary();
+    }
+    case 'project.reset':
+      clearAll();
+      return agentSummary();
+    case 'project.example':
+      $('exampleBtn').click();
+      return agentSummary();
+    case 'project.save': {
+      const state = collectPlotState();
+      localStorage.setItem('xy-plotter-agent-state', JSON.stringify(state));
+      return { saved: true, key: 'xy-plotter-agent-state', revision: agentRevision };
+    }
+    case 'project.load': {
+      let state = params.state || null;
+      if (!state) {
+        try { state = JSON.parse(localStorage.getItem('xy-plotter-agent-state') || 'null'); } catch (e) {}
+      }
+      if (!state) agentFail('INVALID_DATA', '没有可载入的 Agent 状态');
+      localStorage.setItem('xy-plotter-agent-state', JSON.stringify(state));
+      loadState({ force: true });
+      return agentSummary();
+    }
+    case 'curve.add': {
+      const c = addAgentCurve(params);
+      if (!plot()) { redraw(); updateStats(); }
+      return agentCurveState(c);
+    }
+    case 'curve.update': {
+      const c = locateAgentCurve(params.id != null ? params.id : (params.curveId != null ? params.curveId : params.curve));
+      if (!c) agentFail('INVALID_PARAMS', '找不到指定曲线');
+      applyAgentCurveSpec(c, params.fields || params);
+      if (!plot()) { redraw(); updateStats(); }
+      return agentCurveState(c);
+    }
+    case 'curve.remove': {
+      const c = locateAgentCurve(params.id != null ? params.id : (params.curveId != null ? params.curveId : params.curve));
+      if (!c) agentFail('INVALID_PARAMS', '找不到指定曲线');
+      const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+      if (sec) sec.querySelector('[data-action="delete-curve"]').click();
+      if (!curves.length) addCurve();
+      return agentSummary();
+    }
+    case 'curve.reorder': {
+      if (!Array.isArray(params.order)) agentFail('INVALID_PARAMS', 'order 必须是曲线 id/名称数组');
+      const ordered = [];
+      for (const ref of params.order) {
+        const c = locateAgentCurve(ref);
+        if (!c) agentFail('INVALID_PARAMS', '找不到排序中的曲线');
+        if (!ordered.includes(c)) ordered.push(c);
+      }
+      for (const c of curves) if (!ordered.includes(c)) ordered.push(c);
+      curves = ordered;
+      selected = [];
+      for (const c of curves) {
+        const sec = curvesBox.querySelector('.curve-sec[data-id="' + c.id + '"]');
+        if (sec) curvesBox.append(sec);
+      }
+      refreshMarkerCurveSel();
+      redraw();
+      updateStats();
+      return curves.map(agentCurveState);
+    }
+    case 'plot.render':
+      if (!plot()) agentFail('INVALID_DATA', '没有可绘制的有效曲线');
+      return agentSummary();
+    case 'plot.clear':
+      clearAll();
+      return agentSummary();
+    case 'view.reset':
+      resetView();
+      return agentSummary().bounds;
+    case 'view.set':
+      applyAgentView(params);
+      return agentSummary().bounds;
+    case 'view.zoom':
+      return agentUseViewZoom(params);
+    case 'view.pan':
+      return agentUseViewPan(params);
+    case 'style.update':
+      applyAgentSettings(params);
+      return {
+        title: $('titleInput').value,
+        xLabel: $('xLabelInput').value,
+        yLabel: $('yLabelInput').value,
+        theme: theme,
+        xScale: $('xScaleSel').value,
+        yScale: $('yScaleSel').value,
+        grid: $('gridChk').checked,
+        smooth: $('smoothSel').value
+      };
+    case 'label.setPosition':
+      applyAgentLabelPositions(params);
+      return JSON.parse(JSON.stringify({ labelPos: labelPos, readoutPos: readoutPos }));
+    case 'marker.add':
+      return agentToggleMarker(params.curveId != null ? params.curveId : params.curve, params.pointIndex, 'add');
+    case 'marker.remove':
+      return agentToggleMarker(params.curveId != null ? params.curveId : params.curve, params.pointIndex, 'remove');
+    case 'marker.toggle':
+      return agentToggleMarker(params.curveId != null ? params.curveId : params.curve, params.pointIndex, 'toggle');
+    case 'marker.markByX':
+      return agentMarkByValue('x', params);
+    case 'marker.markByY':
+      return agentMarkByValue('y', params);
+    case 'marker.setOffset': {
+      const c = locateAgentCurve(params.curveId != null ? params.curveId : params.curve);
+      if (!c) agentFail('INVALID_PARAMS', '找不到指定曲线');
+      const ci = curves.indexOf(c), xi = Number(params.pointIndex);
+      const item = selected.find((s) => s.ci === ci && s.xi === xi);
+      if (!item) agentFail('INVALID_PARAMS', '该点不是已标记点');
+      item.dx = isFinite(params.dx) ? Number(params.dx) : undefined;
+      item.dy = isFinite(params.dy) ? Number(params.dy) : undefined;
+      redraw();
+      return agentSelectedState();
+    }
+    case 'marker.clear':
+      selected = [];
+      updateSelInfo();
+      redraw();
+      return [];
+    case 'cursor.update':
+      return agentApplyCursors(params);
+    case 'cursor.reset':
+      cursors.x = { on: false, v1: null, v2: null };
+      cursors.y = { on: false, v1: null, v2: null };
+      readoutPos = { tx: 0.03, ty: 0.05 };
+      $('cursorXChk').checked = false;
+      $('cursorYChk').checked = false;
+      redraw();
+      return { x: cursors.x, y: cursors.y, readoutPos: readoutPos };
+    case 'cleanup.configure':
+      agentSetControl('cleanEnableChk', params.enabled !== false, ['change']);
+      if (hasOwn(params, 'smooth')) agentSetControl('cleanSmoothChk', params.smooth, ['change']);
+      if (hasOwn(params, 'window')) agentSetControl('cleanWindowInput', params.window, ['input', 'change']);
+      if (hasOwn(params, 'fillGaps')) agentSetControl('fillGapsChk', params.fillGaps, ['change']);
+      if (hasOwn(params, 'exportProcessed')) agentSetControl('exportCleanChk', params.exportProcessed, ['change']);
+      return {
+        enabled: cleanEnabled, smooth: cleanSmooth, window: cleanWindow,
+        fillGaps: fillGaps, exportProcessed: exportClean
+      };
+    case 'cleanup.hideIndices':
+      return agentHideCurveIndices(params);
+    case 'cleanup.eraseRegion':
+      return agentEraseRegion(params);
+    case 'cleanup.undo':
+      undoClean();
+      return { totalHiddenCount: agentHiddenCount(), selected: agentSelectedState() };
+    case 'cleanup.redo':
+      redoClean();
+      return { totalHiddenCount: agentHiddenCount(), selected: agentSelectedState() };
+    case 'cleanup.restore':
+      restoreHidden();
+      return { totalHiddenCount: agentHiddenCount() };
+    case 'stats.configure':
+      if (hasOwn(params, 'xMin') || hasOwn(params, 'xMax')) {
+        agentSetControl('statsXMin', params.xMin, ['change']);
+        agentSetControl('statsXMax', params.xMax, ['change']);
+      }
+      if (params.source) agentSetControl('statsSourceSel', params.source, ['change']);
+      if (params.fitCurveId) agentSetControl('statsFitCurveSel', params.fitCurveId, ['change']);
+      if (hasOwn(params, 'showFit')) agentSetControl('statsFitChk', params.showFit, ['change']);
+      updateStats();
+      return agentStatsState();
+    case 'stats.get':
+      updateStats();
+      return agentStatsState();
+    case 'interaction.update':
+      return agentApplyInteraction(params);
+    case 'import.csv': {
+      if (typeof params.content !== 'string') agentFail('INVALID_PARAMS', 'CSV content 必须是字符串');
+      return agentImportFile(new File([params.content], params.filename || 'agent-data.csv', { type: 'text/csv' }));
+    }
+    case 'import.xlsx': {
+      if (!params.base64) agentFail('INVALID_PARAMS', '缺少 XLSX base64');
+      const bytes = agentDecodeBase64(params.base64);
+      const file = new File([bytes], params.filename || 'agent-data.xlsx', {
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      return agentImportFile(file);
+    }
+    case 'export.png':
+      return agentExport('png', params, { requestId: options && options.requestId });
+    case 'export.csv':
+      return agentExport('csv', params, { requestId: options && options.requestId });
+    case 'export.xlsx':
+      return agentExport('xlsx', params, { requestId: options && options.requestId });
+    default:
+      agentFail('UNSUPPORTED_ACTION', '不支持的 Action: ' + action);
+  }
+}
+
+async function runAgentAction(action, params, options) {
+  if (!action || typeof action !== 'string') {
+    return {
+      ok: false, action: action || null, revision: agentRevision, result: null,
+      warnings: [], error: { code: 'INVALID_PARAMS', message: '缺少 action', details: null }
+    };
+  }
+  if (!agentActionSet.has(action)) {
+    return {
+      ok: false, action: action, revision: agentRevision, result: null,
+      warnings: [], error: { code: 'UNSUPPORTED_ACTION', message: '不支持的 Action: ' + action, details: null }
+    };
+  }
+  agentExecuting = true;
+  agentWarnings = [];
+  agentLastError = null;
+  const mutating = AGENT_MUTATING_ACTIONS.has(action);
+  if (mutating) setAgentLifecycle('applying', { action: action });
+  const started = performance.now();
+  try {
+    const result = await executeAgentAction(action, params || {}, options || {});
+    if (mutating) agentRevision++;
+    const normalizedResult = result && typeof result === 'object' && !Array.isArray(result) &&
+      hasOwn(result, 'revision')
+      ? { ...result, revision: agentRevision }
+      : result;
+    const current = document.documentElement.dataset.agentState;
+    if (mutating && current === 'applying') {
+      setAgentLifecycle(curves.some((c) => c.xs.length >= 2) ? 'plotted' : 'ready', { action: action });
+    }
+    const response = {
+      ok: true,
+      action: action,
+      revision: agentRevision,
+      result: normalizedResult === undefined ? null : normalizedResult,
+      warnings: agentWarnings.slice(),
+      error: null,
+      durationMs: Math.round((performance.now() - started) * 10) / 10
+    };
+    window.dispatchEvent(new CustomEvent('xy-plotter-agent:result', { detail: response }));
+    return response;
+  } catch (error) {
+    const normalized = error instanceof XYAgentError
+      ? error
+      : new XYAgentError('INTERNAL_ERROR', error && error.message ? error.message : String(error));
+    agentLastError = {
+      code: normalized.code,
+      message: normalized.message,
+      details: normalized.details || null
+    };
+    setAgentLifecycle('error', { action: action, error: agentLastError });
+    const response = {
+      ok: false,
+      action: action,
+      revision: agentRevision,
+      result: null,
+      warnings: agentWarnings.slice(),
+      error: agentLastError,
+      durationMs: Math.round((performance.now() - started) * 10) / 10
+    };
+    window.dispatchEvent(new CustomEvent('xy-plotter-agent:error', { detail: response }));
+    return response;
+  } finally {
+    agentExecuting = false;
+  }
+}
+
+function agentExecute(action, params, options) {
+  const task = () => runAgentAction(action, params || {}, options || {});
+  const queued = agentQueue.then(task, task);
+  agentQueue = queued.catch(() => {});
+  return queued;
+}
+
+function agentClone(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+async function agentBridgeRequest(path, options) {
+  options = options || {};
+  const response = await fetch(agentBridgeUrl + path, {
+    ...options,
+    headers: {
+      'X-Agent-Token': agentBridgeToken,
+      'Content-Type': options.body ? 'application/json' : 'text/plain;charset=UTF-8',
+      ...(options.headers || {})
+    }
+  });
+  if (response.status === 204) return null;
+  if (!response.ok) throw new Error('Bridge HTTP ' + response.status + ': ' + await response.text());
+  return response.json();
+}
+
+async function agentBridgeLoop() {
+  if (!agentMode || !agentBridgeUrl || !agentBridgeToken) return;
+  let registered = false;
+  while (true) {
+    try {
+      if (!registered) {
+        await agentBridgeRequest('/v1/browser/register', {
+          method: 'POST',
+          body: JSON.stringify({
+            sessionId: agentSessionId,
+            userAgent: navigator.userAgent,
+            apiVersion: '1.0.0',
+            capabilities: agentActionSet.size
+          })
+        });
+        registered = true;
+        agentBridgeConnected = true;
+        setAgentLifecycle(curves.some((c) => c.xs.length >= 2) ? 'plotted' : 'ready', {
+          bridge: 'connected'
+        });
+      }
+      const command = await agentBridgeRequest(
+        '/v1/browser/next?sessionId=' + encodeURIComponent(agentSessionId) + '&waitMs=25000'
+      );
+      if (!command || !command.id) continue;
+      const result = await agentExecute(command.action, command.params || {}, {
+        requestId: command.id,
+        fromBridge: true
+      });
+      await agentBridgeRequest('/v1/browser/result', {
+        method: 'POST',
+        body: JSON.stringify({
+          id: command.id,
+          sessionId: agentSessionId,
+          result: result
+        })
+      });
+    } catch (error) {
+      registered = false;
+      agentBridgeConnected = false;
+      await agentDelay(1000);
+    }
+  }
+}
+
+async function initializeXYPlotterAgent() {
+  agentCatalog = {
+    schemaVersion: 1,
+    apiVersion: '1.0.0',
+    entrypoint: 'window.XYPlotterAgent',
+    actions: AGENT_ACTION_FALLBACK.map((name) => ({
+      name: name,
+      group: name.split('.')[0],
+      mutating: AGENT_MUTATING_ACTIONS.has(name)
+    }))
+  };
+  try {
+    const response = await fetch('./agent/actions.json', { cache: 'no-store' });
+    if (response.ok) {
+      const catalog = await response.json();
+      if (catalog && Array.isArray(catalog.actions)) {
+        agentCatalog = catalog;
+        agentActionSet = new Set(catalog.actions.map((item) => item.name).filter(Boolean));
+      }
+    }
+  } catch (e) {}
+
+  window.XYPlotterAgent = Object.freeze({
+    version: '1.0.0',
+    sessionId: agentSessionId,
+    ready: true,
+    execute: agentExecute,
+    getState: () => agentStateSnapshot(),
+    getSummary: agentSummary,
+    getCapabilities: () => agentClone({
+      ...agentCatalog,
+      mode: agentMode ? 'isolated-agent' : 'normal',
+      sessionId: agentSessionId,
+      bridgeConfigured: !!(agentBridgeUrl && agentBridgeToken),
+      bridgeConnected: agentBridgeConnected
+    }),
+    subscribe: (listener) => {
+      if (typeof listener !== 'function') return () => {};
+      const wrapped = (event) => listener(event.detail);
+      window.addEventListener('xy-plotter-agent:state', wrapped);
+      window.addEventListener('xy-plotter-agent:result', wrapped);
+      window.addEventListener('xy-plotter-agent:error', wrapped);
+      return () => {
+        window.removeEventListener('xy-plotter-agent:state', wrapped);
+        window.removeEventListener('xy-plotter-agent:result', wrapped);
+        window.removeEventListener('xy-plotter-agent:error', wrapped);
+      };
+    }
+  });
+  setAgentLifecycle(curves.some((c) => c.xs.length >= 2) ? 'plotted' : 'ready', { api: 'ready' });
+  window.dispatchEvent(new CustomEvent('xy-plotter-agent:ready', {
+    detail: { version: '1.0.0', sessionId: agentSessionId, actionCount: agentActionSet.size }
+  }));
+  if (agentBridgeUrl && agentBridgeToken) agentBridgeLoop();
+}
+
 function resize() {
   const rect = canvas.parentElement.getBoundingClientRect();
   dpr = window.devicePixelRatio || 1;
@@ -3161,6 +4321,7 @@ function resize() {
 window.addEventListener('resize', resize);
 resize();
 loadState();
+initializeXYPlotterAgent();
 document.body.dataset.ready = '1';
 </script>
 </body>
