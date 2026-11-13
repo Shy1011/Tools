@@ -14,6 +14,8 @@ workspace:
 - `round-08.mjs`: verifies Agent state isolation from the normal localStorage.
 - `round-09.mjs`: checks remaining patch/update/error paths, erase and reset.
 - `round-10.mjs`: confirms the visible UI and example button still work.
+- `round-12-padding-wheel.mjs`: checks 5% auto-range padding and pointer-centered
+  wheel zoom; manually set bounds remain exact.
 
 Run an individual round with:
 

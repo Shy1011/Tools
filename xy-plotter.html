@@ -355,6 +355,7 @@ input:focus, select:focus, textarea:focus{
 const $ = (id) => document.getElementById(id);
 const MONO = '"Cascadia Mono", Consolas, "Courier New", monospace';
 const SERIES_COLOR = '#2563eb';
+const AUTO_VIEW_PADDING = 0.05;
 const THEMES = {
   light: { bg:'#ffffff', grid:'#e5e7eb', minor:'#f3f4f6', axis:'#6b7280', text:'#111827', title:'#111827', frame:'#d1d5db' },
   dark:  { bg:'#11161d', grid:'#2a323e', minor:'#1f2731', axis:'#9aa5b5', text:'#e6e9ef', title:'#f3f4f6', frame:'#3a4350' }
@@ -571,27 +572,37 @@ function computeView(cfg) {
     if (lo === hi) { lo -= 1; hi += 1; }
     return [lo, hi];
   };
+  const paddedRange = (r, wantLog) => {
+    if (!r) return null;
+    if (wantLog) {
+      const logLo = Math.log10(r[0]), logHi = Math.log10(r[1]);
+      const pad = (logHi - logLo) * AUTO_VIEW_PADDING;
+      return [Math.pow(10, logLo - pad), Math.pow(10, logHi + pad)];
+    }
+    const pad = (r[1] - r[0]) * AUTO_VIEW_PADDING;
+    return [r[0] - pad, r[1] + pad];
+  };
   if (view.autoX) {
-    const r = range(allX, cfg.xScale === 'log');
+    const r = paddedRange(range(allX, cfg.xScale === 'log'), cfg.xScale === 'log');
     if (r) { view.xMin = r[0]; view.xMax = r[1]; }
   } else if (!(isFinite(view.xMin) && isFinite(view.xMax) && view.xMin < view.xMax)) {
-    const r = range(allX, cfg.xScale === 'log');
+    const r = paddedRange(range(allX, cfg.xScale === 'log'), cfg.xScale === 'log');
     if (r) { view.xMin = r[0]; view.xMax = r[1]; }
   }
   if (view.autoY) {
-    const r = range(allY, cfg.yScale === 'log');
+    const r = paddedRange(range(allY, cfg.yScale === 'log'), cfg.yScale === 'log');
     if (r) { view.yMin = r[0]; view.yMax = r[1]; }
   } else if (!(isFinite(view.yMin) && isFinite(view.yMax) && view.yMin < view.yMax)) {
-    const r = range(allY, cfg.yScale === 'log');
+    const r = paddedRange(range(allY, cfg.yScale === 'log'), cfg.yScale === 'log');
     if (r) { view.yMin = r[0]; view.yMax = r[1]; }
   }
   if (cfg.xScale === 'log' && view.xMin <= 0) {
-    const r = range(allX, true);
+    const r = paddedRange(range(allX, true), true);
     if (r) { view.xMin = r[0]; view.xMax = r[1]; }
     else { view.xMin = 1; view.xMax = 10; warn('Log 坐标没有正数数据,已使用默认范围 1–10'); }
   }
   if (cfg.yScale === 'log' && view.yMin <= 0) {
-    const r = range(allY, true);
+    const r = paddedRange(range(allY, true), true);
     if (r) { view.yMin = r[0]; view.yMax = r[1]; }
     else { view.yMin = 1; view.yMax = 10; warn('Log 坐标没有正数数据,已使用默认范围 1–10'); }
   }
@@ -1470,6 +1481,50 @@ function findNearest(px, py) {
   if (!best || best.d2 > 400) return null;
   return best;
 }
+
+function zoomRangeAround(min, max, anchor, factor, isLog) {
+  if (isLog) {
+    const logMin = Math.log10(min), logMax = Math.log10(max), logAnchor = Math.log10(anchor);
+    return [
+      Math.pow(10, logAnchor - (logAnchor - logMin) * factor),
+      Math.pow(10, logAnchor + (logMax - logAnchor) * factor)
+    ];
+  }
+  return [
+    anchor - (anchor - min) * factor,
+    anchor + (max - anchor) * factor
+  ];
+}
+
+function zoomAtCanvasPoint(p, factor) {
+  const cfg = readConfig();
+  const rect = getPlotRect(cfg);
+  if (p.x < rect.L || p.x > rect.L + rect.W || p.y < rect.T || p.y > rect.B) return false;
+  const anchorX = invX(p.x, cfg.xScale, rect.L, rect.W);
+  const anchorY = invY(p.y, cfg.yScale, rect.B, rect.H);
+  const xr = zoomRangeAround(view.xMin, view.xMax, anchorX, factor, cfg.xScale === 'log');
+  const yr = zoomRangeAround(view.yMin, view.yMax, anchorY, factor, cfg.yScale === 'log');
+  if (!xr.every(isFinite) || !yr.every(isFinite) ||
+      xr[0] >= xr[1] || yr[0] >= yr[1] ||
+      (cfg.xScale === 'log' && xr[0] <= 0) ||
+      (cfg.yScale === 'log' && yr[0] <= 0)) return false;
+  view.xMin = xr[0]; view.xMax = xr[1];
+  view.yMin = yr[0]; view.yMax = yr[1];
+  syncRangeInputs();
+  redraw();
+  return true;
+}
+
+canvas.addEventListener('wheel', (e) => {
+  const delta = Math.abs(e.deltaY) >= Math.abs(e.deltaX) ? e.deltaY : e.deltaX;
+  if (!delta) return;
+  const factor = Math.exp(delta * 0.0015);
+  if (!zoomAtCanvasPoint(canvasPos(e), factor)) return;
+  e.preventDefault();
+  status('滚轮缩放  X ' + fmt(view.xMin) + '–' + fmt(view.xMax) +
+    '  Y ' + fmt(view.yMin) + '–' + fmt(view.yMax));
+  scheduleSave();
+}, { passive: false });
 
 canvas.addEventListener('mousemove', (e) => {
   const p = canvasPos(e);
