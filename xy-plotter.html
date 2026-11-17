@@ -328,6 +328,7 @@ input:focus, select:focus, textarea:focus{
             · 工具栏「导出文件名」留空时使用图表标题;填写后严格使用该文本作为文件名(自动补 .png/.csv/.xlsx)<br>
             · 可输入 X / Y 值在指定曲线上精确定位标记点<br>
             · 拖动标题 / X 轴名称 / Y 轴名称可调整位置<br>
+            · 拖动图例框可调整位置,不会改变曲线显隐<br>
             · 拖动标记点旁边的坐标文字可调整位置,移开后显示指引箭头<br>
             · 每条曲线可设置线条粗细(线宽)<br>
             · 「毛刺清理」为显示层处理:中值滤波去毛刺,可调窗口/叠加滑动平均,不改原始数据<br>
@@ -365,13 +366,14 @@ let curves = [];          // [{id,name,color,visible,width,xColumnTitle,yColumnT
 let curveSeq = 0;
 const PALETTE = ['#2563eb', '#dc2626', '#16a34a', '#d97706', '#7c3aed', '#0ea5e9', '#db2777', '#65a30d'];
 const curvesBox = $('curvesBox');
-let legendItems = [];     // [{x,y,w,h,ci}]
+let legendRect = null;
 let markerRects = [];     // [{x,y,w,h,si}] 标记点标签区域
 const labelPos = {
   title: { x: 0.5, y: 8 },
   xAxis: { t: 0.5, d: 40 },
   yAxis: { t: 0.5, d: 18 }
 };
+const legendPos = { x: null, y: null };
 let labelRects = {};
 let readoutPos = { tx: 0.03, ty: 0.05 };
 let readoutRect = null;
@@ -1078,7 +1080,7 @@ function draw(ctx) {
   }
 
   // 图例
-  legendItems = [];
+  legendRect = null;
   const vis = curves.filter((c) => c.visible && c.xs.length >= 2);
   if (vis.length) {
     ctx.font = '12px system-ui, sans-serif';
@@ -1086,8 +1088,11 @@ function draw(ctx) {
     for (const c of vis) wmax = Math.max(wmax, ctx.measureText(c.name).width);
     const lw = Math.min(180, wmax + 38);
     const lh = vis.length * 18 + 8;
-    const lx = L + plotW - lw - 8;
-    const ly = T_ + 8;
+    const maxLx = Math.max(L + 2, L + plotW - lw - 2);
+    const maxLy = Math.max(T_ + 2, B - lh - 2);
+    const lx = clampNum(Number.isFinite(legendPos.x) ? legendPos.x : L + plotW - lw - 8, L + 2, maxLx);
+    const ly = clampNum(Number.isFinite(legendPos.y) ? legendPos.y : T_ + 8, T_ + 2, maxLy);
+    legendRect = { x: lx, y: ly, w: lw, h: lh };
     ctx.globalAlpha = 0.88;
     ctx.fillStyle = T.bg;
     ctx.fillRect(lx, ly, lw, lh);
@@ -1101,7 +1106,6 @@ function draw(ctx) {
       ctx.fillStyle = T.text;
       ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
       ctx.fillText(c.name, lx + 22, y);
-      legendItems.push({ x: lx, y: ly + k * 18, w: lw, h: 18, ci: curves.indexOf(c) });
     });
   }
 
@@ -1428,6 +1432,14 @@ function updateLabelDrag(p) {
   redraw();
 }
 
+function updateLegendDrag(p) {
+  if (!legendRect) return;
+  const rect = getPlotRect(readConfig());
+  legendPos.x = clampNum(drag.origX + p.x - drag.sx, rect.L + 2, Math.max(rect.L + 2, rect.L + rect.W - legendRect.w - 2));
+  legendPos.y = clampNum(drag.origY + p.y - drag.sy, rect.T + 2, Math.max(rect.T + 2, rect.B - legendRect.h - 2));
+  redraw();
+}
+
 function updateCursorDrag(p) {
   const cfg = readConfig();
   const rect = getPlotRect(cfg);
@@ -1530,6 +1542,7 @@ canvas.addEventListener('mousemove', (e) => {
   const p = canvasPos(e);
   if (drag) {
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
+    else if (drag.mode === 'legend') { updateLegendDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else if (drag.mode === 'stats') {
       const rect = getPlotRect(readConfig());
@@ -1541,6 +1554,15 @@ canvas.addEventListener('mousemove', (e) => {
     else if (drag.mode === 'cursor') { updateCursorDrag(p); }
     else if (drag.mode === 'readout') { updateReadoutDrag(p); }
     else panView(p.x - drag.sx, p.y - drag.sy);
+    return;
+  }
+  if (legendRect && p.x >= legendRect.x && p.x <= legendRect.x + legendRect.w &&
+      p.y >= legendRect.y && p.y <= legendRect.y + legendRect.h) {
+    hover = null;
+    $('tooltip').style.display = 'none';
+    canvas.style.cursor = 'move';
+    $('status').textContent = '拖动图例框可调整位置';
+    redraw();
     return;
   }
   const near = findNearest(p.x, p.y);
@@ -1592,14 +1614,11 @@ canvas.addEventListener('mousedown', (e) => {
     canvas.style.cursor = 'crosshair';
     return;
   }
-  for (const it of legendItems) {
-    if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) {
-      curves[it.ci].visible = !curves[it.ci].visible;
-      updateStats();
-      redraw();
-      scheduleSave();
-      return;
-    }
+  if (legendRect && p.x >= legendRect.x && p.x <= legendRect.x + legendRect.w &&
+      p.y >= legendRect.y && p.y <= legendRect.y + legendRect.h) {
+    drag = { mode: 'legend', sx: p.x, sy: p.y, origX: legendRect.x, origY: legendRect.y };
+    canvas.style.cursor = 'move';
+    return;
   }
   for (const it of markerRects) {
     if (p.x >= it.x && p.x <= it.x + it.w && p.y >= it.y && p.y <= it.y + it.h) {
@@ -1658,6 +1677,7 @@ window.addEventListener('mousemove', (e) => {
     const r = canvas.getBoundingClientRect();
     const p = { x: e.clientX - r.left, y: e.clientY - r.top };
     if (drag.mode === 'label' || drag.mode === 'markerLabel') { updateLabelDrag(p); }
+    else if (drag.mode === 'legend') { updateLegendDrag(p); }
     else if (drag.mode === 'zoom') { zoomRect = { x1: drag.sx, y1: drag.sy, x2: p.x, y2: p.y }; redraw(); }
     else if (drag.mode === 'stats') {
       const rect = getPlotRect(readConfig());
@@ -1773,7 +1793,8 @@ window.addEventListener('mouseup', (e) => {
   if (!drag) return;
   if (drag.mode === 'erase') {
     performErase(drag.sx, drag.sy, eraseRect ? eraseRect.x2 : drag.sx, eraseRect ? eraseRect.y2 : drag.sy, drag.sx, drag.sy);
-  } else if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'cursor' || drag.mode === 'readout') {
+  } else if (drag.mode === 'label' || drag.mode === 'markerLabel' || drag.mode === 'legend' ||
+             drag.mode === 'cursor' || drag.mode === 'readout') {
     saveState();
   } else if (drag.mode === 'stats') {
     const w = statsDragRect ? Math.abs(statsDragRect.x2 - statsDragRect.x1) : 0;
@@ -3149,6 +3170,7 @@ function collectPlotState() {
       },
       view: { autoX: view.autoX, autoY: view.autoY, xMin: view.xMin, xMax: view.xMax, yMin: view.yMin, yMax: view.yMax },
       labelPos: labelPos,
+      legendPos: legendPos,
       readoutPos: readoutPos,
       stats: {
         xMin: $('statsXMin').value,
@@ -3230,6 +3252,11 @@ function loadState(options) {
     if (state.labelPos.title) labelPos.title = state.labelPos.title;
     if (state.labelPos.xAxis) labelPos.xAxis = state.labelPos.xAxis;
     if (state.labelPos.yAxis) labelPos.yAxis = state.labelPos.yAxis;
+  }
+  legendPos.x = null; legendPos.y = null;
+  if (state && state.legendPos) {
+    if (Number.isFinite(state.legendPos.x)) legendPos.x = state.legendPos.x;
+    if (Number.isFinite(state.legendPos.y)) legendPos.y = state.legendPos.y;
   }
   if (state && state.readoutPos) {
     const rp = state.readoutPos;
@@ -3654,6 +3681,10 @@ function applyAgentLabelPositions(input) {
     if (isFinite(input.yAxis.t)) labelPos.yAxis.t = Math.max(0, Math.min(1, Number(input.yAxis.t)));
     if (isFinite(input.yAxis.d)) labelPos.yAxis.d = Number(input.yAxis.d);
   }
+  if (input.legend) {
+    if (input.legend.x != null && Number.isFinite(Number(input.legend.x))) legendPos.x = Number(input.legend.x);
+    if (input.legend.y != null && Number.isFinite(Number(input.legend.y))) legendPos.y = Number(input.legend.y);
+  }
   redraw();
 }
 
@@ -4070,7 +4101,7 @@ async function executeAgentAction(action, params, options) {
       };
     case 'label.setPosition':
       applyAgentLabelPositions(params);
-      return JSON.parse(JSON.stringify({ labelPos: labelPos, readoutPos: readoutPos }));
+      return JSON.parse(JSON.stringify({ labelPos: labelPos, legendPos: legendPos, readoutPos: readoutPos }));
     case 'marker.add':
       return agentToggleMarker(params.curveId != null ? params.curveId : params.curve, params.pointIndex, 'add');
     case 'marker.remove':

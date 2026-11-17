@@ -16,6 +16,8 @@ workspace:
 - `round-10.mjs`: confirms the visible UI and example button still work.
 - `round-12-padding-wheel.mjs`: checks 5% auto-range padding and pointer-centered
   wheel zoom; manually set bounds remain exact.
+- `round-14-legend-drag.mjs`: verifies that clicking the legend no longer hides
+  curves, dragging moves it within the plot, and the position survives reload.
 
 Run an individual round with:
 

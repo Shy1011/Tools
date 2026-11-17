@@ -33,7 +33,7 @@ Features:
 - Point picking: click a data point to add/remove a marker, mark multiple points at once with coordinates listed, one-click "Clear all markers"
 - Tick modes: auto pretty numbers (1/2/5×10ⁿ), N equal segments, fixed step, data point positions, custom tick list
 - Range statistics and fitting: choose an X range manually, from the current view, or with Shift+drag; analyze raw or displayed data for mean, standard deviation, RMS, peak-to-peak, and linear-fit slope, intercept, and R²
-- Interaction: click the legend to show/hide curves, hover to show the curve name and exact coordinates, box-select zoom, hold Space or "Pan" to drag, double-click to reset the view
+- Interaction: drag the legend box to reposition it, hover to show the curve name and exact coordinates, box-select zoom, hold Space or "Pan" to drag, double-click to reset the view
 - Data export / import: one-click CSV or Excel export; XLSX includes data, notes, an embedded chart image, and full plotting-state metadata, while CSV / TXT / XLSX can restore curves
 - Export filename: set one shared filename in the toolbar; when empty it uses the chart title, otherwise the entered text is used strictly as the base name
 - Notes: enter plot-independent experiment notes in the sidebar; they are saved automatically and stored as a separate CSV metadata field
